@@ -1,0 +1,121 @@
+# Workflow reusable para cada app/servicio. Los workflows que lo llaman los agrega cada
+# agente en la fase 1, por ejemplo .github/workflows/users.yml:
+#
+#   name: users
+#   on:
+#     pull_request:
+#       paths: ["services/users/**", "packages/contracts/**", "packages/config/**", "proto/**"]
+#     push:
+#       branches: [main]
+#       paths: ["services/users/**", "packages/contracts/**", "packages/config/**", "proto/**"]
+#   jobs:
+#     ci:
+#       uses: ./.github/workflows/_service-ci.yml
+#       permissions:
+#         contents: read
+#         packages: write   # necesario para publicar en GHCR
+#       with:
+#         package: "@juez/users"
+#         path: services/users
+#
+# Requisitos del paquete: scripts `lint`, `typecheck` y `test` (vitest run --coverage, que
+# falla bajo el 60 % por el preset de @juez/config) y un Dockerfile en <path>/Dockerfile que
+# se construye con el contexto en la raíz del repo.
+name: service-ci
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Nombre pnpm del paquete (p. ej. @juez/users)
+        required: true
+        type: string
+      path:
+        description: Ruta del paquete en el repo (p. ej. services/users)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: lint, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PACKAGE: ${{ inputs.package }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # Sin `version`: usa el campo packageManager del package.json raíz.
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: build @juez/contracts (genera el código desde proto/)
+        run: pnpm turbo run build --filter=@juez/contracts
+
+      - name: lint
+        run: pnpm --filter "$PACKAGE" run lint
+
+      - name: typecheck
+        run: pnpm --filter "$PACKAGE" run typecheck
+
+      - name: test + coverage (umbral 60 %)
+        run: pnpm --filter "$PACKAGE" run test
+
+  docker:
+    name: docker image
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PKG_PATH: ${{ inputs.path }}
+      PUBLISH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: nombre de la imagen
+        id: image
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "name=ghcr.io/${owner}/juez-$(basename "$PKG_PATH")" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: login GHCR
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=latest
+
+      # En PR solo se construye (valida el Dockerfile); en main además se publica.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ inputs.path }}/Dockerfile
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ steps.image.outputs.name }}
+          cache-to: type=gha,mode=max,scope=${{ steps.image.outputs.name }}

@@ -1,0 +1,70 @@
+name: contracts
+
+on:
+  pull_request:
+    paths:
+      - 'proto/**'
+      - 'packages/contracts/**'
+      - 'buf.yaml'
+      - '.github/workflows/contracts.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'proto/**'
+      - 'packages/contracts/**'
+      - 'buf.yaml'
+      - '.github/workflows/contracts.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: lint, breaking, generate, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # Sin `version`: usa el campo packageManager del package.json raíz.
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: buf lint
+        run: pnpm proto:lint
+
+      - name: buf breaking (contra main)
+        if: github.event_name == 'pull_request'
+        run: |
+          # El checkout de un PR no trae la rama main; se crea localmente para `.git#branch=main`.
+          git fetch --no-tags --depth=1 origin main:main
+          # Mientras main no tenga contratos (PR que los introduce) no hay contra qué comparar.
+          if git cat-file -e main:buf.yaml 2>/dev/null; then
+            pnpm proto:breaking
+          else
+            echo "::notice::main aún no tiene buf.yaml; se omite buf breaking"
+          fi
+
+      - name: generate
+        run: pnpm proto:gen
+
+      - name: typecheck
+        run: pnpm --filter @juez/contracts typecheck
+
+      - name: lint
+        run: pnpm --filter @juez/contracts lint
+
+      - name: test + coverage
+        run: pnpm --filter @juez/contracts test

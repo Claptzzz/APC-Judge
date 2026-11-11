@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package juez.events.v1;
+
+import "google/protobuf/timestamp.proto";
+import "juez/common/v1/common.proto";
+
+// Eventos de dominio publicados en Kafka.
+// - Valor del mensaje: protobuf binario del evento.
+// - Key: id del agregado (user_id o submission_id), para mantener el orden por agregado.
+// - event_id: UUID único del evento; los consumidores deduplican por este campo.
+// Topics (3 particiones c/u, más `<topic>.dlq`):
+//   user.registered    -> UserRegistered
+//   submission.created -> SubmissionCreated
+//   submission.judged  -> SubmissionJudged
+
+// Topic `user.registered`. Productor: users. Key: user_id.
+message UserRegistered {
+  string event_id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+  string user_id = 3;
+  string username = 4;
+}
+
+// Topic `submission.created`. Productor: submissions (vía outbox). Key: submission_id.
+message SubmissionCreated {
+  string event_id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+  string submission_id = 3;
+  string user_id = 4;
+  string problem_id = 5;
+  optional string contest_id = 6;
+  juez.common.v1.Language language = 7;
+  string source_code = 8;
+}
+
+// Topic `submission.judged`. Productor: judge. Key: submission_id.
+message SubmissionJudged {
+  string event_id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+  string submission_id = 3;
+  string user_id = 4;
+  string problem_id = 5;
+  optional string contest_id = 6;
+  juez.common.v1.Verdict verdict = 7;
+  int32 time_ms = 8;
+  int32 memory_kb = 9;
+  int32 passed_cases = 10;
+  int32 total_cases = 11;
+  // Momento en que se creó la submission (para la penalización ICPC).
+  google.protobuf.Timestamp submitted_at = 12;
+}

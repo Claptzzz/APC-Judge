@@ -1,0 +1,24 @@
+# Generación de código desde ../../proto con plugins locales (instalados por npm).
+# Se ejecuta con `pnpm generate` (o `pnpm proto:gen` desde la raíz); el resultado no se commitea.
+version: v2
+clean: true
+inputs:
+  - directory: ../../proto
+plugins:
+  # protobuf-es v2: mensajes + descriptores de servicio (servidores/clientes ConnectRPC y
+  # serialización de eventos Kafka).
+  - local: protoc-gen-es
+    out: src/gen/es
+    opt:
+      - target=ts
+      - import_extension=js
+  # ts-proto: interfaces y decoradores para NestJS (bff y submissions), que cargan los .proto
+  # en runtime con @grpc/proto-loader. useDate=false: Timestamp llega como {seconds, nanos}.
+  - local: protoc-gen-ts_proto
+    out: src/gen/nest
+    opt:
+      - nestJs=true
+      - addGrpcMetadata=true
+      - useDate=false
+      - esModuleInterop=true
+      - importSuffix=.js

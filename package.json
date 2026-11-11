@@ -1,0 +1,31 @@
+{
+  "name": "juez-online",
+  "private": true,
+  "description": "Juez online de programación competitiva — taller de microservicios (Arquitectura de Software, UCN)",
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=26",
+    "pnpm": ">=12.18.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "proto:lint": "buf lint",
+    "proto:breaking": "buf breaking --against '.git#branch=main'",
+    "proto:gen": "turbo run generate --filter=@juez/contracts",
+    "infra:up": "sh infra/scripts/compose.sh up -d --wait --wait-timeout 180",
+    "infra:down": "sh infra/scripts/compose.sh down",
+    "infra:reset": "sh infra/scripts/compose.sh down -v --remove-orphans && sh infra/scripts/compose.sh up -d --wait --wait-timeout 180",
+    "jwt:keys": "sh infra/scripts/gen-jwt-keys.sh"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "1.75.0",
+    "prettier": "3.9.10",
+    "turbo": "2.11.10"
+  }
+}

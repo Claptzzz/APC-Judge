@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package juez.users.v1;
+
+import "google/protobuf/timestamp.proto";
+import "juez/common/v1/common.proto";
+
+// Identidad y autenticación. Emite JWT RS256 firmados con la llave privada de users.
+// bff y mcp verifican los tokens localmente con la llave pública (GetPublicKey).
+service UserService {
+  // Crea un usuario con rol CONTESTANT y publica `user.registered`.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Valida credenciales y devuelve un JWT RS256.
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  // Batch por ids. Los ids inexistentes se omiten de la respuesta.
+  rpc GetUsers(GetUsersRequest) returns (GetUsersResponse);
+  // Llave pública para verificar tokens localmente. No requiere autenticación.
+  rpc GetPublicKey(GetPublicKeyRequest) returns (GetPublicKeyResponse);
+}
+
+message User {
+  // UUID.
+  string id = 1;
+  string username = 2;
+  string email = 3;
+  juez.common.v1.Role role = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message RegisterRequest {
+  string username = 1;
+  string email = 2;
+  // Texto plano; users lo guarda hasheado.
+  string password = 3;
+}
+
+message RegisterResponse {
+  User user = 1;
+}
+
+message LoginRequest {
+  // Username o email.
+  string username_or_email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  // JWT RS256. Claims: sub (user id), username, role, iss, aud, iat, exp. Header `kid`.
+  string access_token = 1;
+  // Siempre "Bearer".
+  string token_type = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  User user = 4;
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message GetUsersRequest {
+  repeated string ids = 1;
+}
+
+message GetUsersResponse {
+  repeated User users = 1;
+}
+
+message GetPublicKeyRequest {}
+
+message GetPublicKeyResponse {
+  // Llave pública en formato PEM (SPKI).
+  string public_key_pem = 1;
+  // Valor del header `kid` de los tokens firmados con esta llave.
+  string key_id = 2;
+  // Siempre "RS256".
+  string algorithm = 3;
+  // Valores esperados de los claims `iss` y `aud`.
+  string issuer = 4;
+  string audience = 5;
+}

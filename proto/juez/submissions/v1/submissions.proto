@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package juez.submissions.v1;
+
+import "google/protobuf/timestamp.proto";
+import "juez/common/v1/common.proto";
+
+// Envíos de código. CreateSubmission persiste la submission y, en la misma transacción,
+// una fila en la tabla outbox que luego se publica como `submission.created`.
+service SubmissionService {
+  // El user_id sale del JWT propagado en la metadata `authorization`.
+  rpc CreateSubmission(CreateSubmissionRequest) returns (CreateSubmissionResponse);
+  rpc GetSubmission(GetSubmissionRequest) returns (GetSubmissionResponse);
+  rpc ListSubmissions(ListSubmissionsRequest) returns (ListSubmissionsResponse);
+}
+
+message Submission {
+  // UUID.
+  string id = 1;
+  string user_id = 2;
+  string problem_id = 3;
+  optional string contest_id = 4;
+  juez.common.v1.Language language = 5;
+  // Vacío en ListSubmissions.
+  string source_code = 6;
+  // PENDING al crearse; se actualiza al consumir `submission.judged`.
+  juez.common.v1.Verdict verdict = 7;
+  int32 time_ms = 8;
+  int32 memory_kb = 9;
+  int32 passed_cases = 10;
+  int32 total_cases = 11;
+  google.protobuf.Timestamp submitted_at = 12;
+  // Ausente mientras no haya veredicto final.
+  google.protobuf.Timestamp judged_at = 13;
+}
+
+message CreateSubmissionRequest {
+  string problem_id = 1;
+  juez.common.v1.Language language = 2;
+  string source_code = 3;
+  optional string contest_id = 4;
+}
+
+message CreateSubmissionResponse {
+  Submission submission = 1;
+}
+
+message GetSubmissionRequest {
+  string id = 1;
+}
+
+message GetSubmissionResponse {
+  Submission submission = 1;
+}
+
+// Filtros opcionales y combinables. Orden: submitted_at descendente.
+message ListSubmissionsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  optional string user_id = 3;
+  optional string problem_id = 4;
+  optional string contest_id = 5;
+}
+
+message ListSubmissionsResponse {
+  repeated Submission submissions = 1;
+  string next_page_token = 2;
+}

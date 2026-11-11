@@ -1,0 +1,73 @@
+{
+  "name": "@juez/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Contratos del juez online: código generado desde proto/ (protobuf-es y ts-proto/Nest), topics Kafka y helpers de eventos",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./es": {
+      "types": "./dist/es.d.ts",
+      "default": "./dist/es.js"
+    },
+    "./nest": {
+      "types": "./dist/nest.d.ts",
+      "default": "./dist/nest.js"
+    },
+    "./proto": {
+      "types": "./dist/proto.d.ts",
+      "default": "./dist/proto.js"
+    }
+  },
+  "files": [
+    "dist",
+    "proto"
+  ],
+  "scripts": {
+    "generate": "buf generate && node scripts/copy-proto.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.17.0"
+  },
+  "peerDependencies": {
+    "@grpc/grpc-js": "^1.14.0",
+    "@nestjs/microservices": "^12.0.0",
+    "rxjs": "^7.8.0"
+  },
+  "peerDependenciesMeta": {
+    "@grpc/grpc-js": {
+      "optional": true
+    },
+    "@nestjs/microservices": {
+      "optional": true
+    },
+    "rxjs": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "1.75.0",
+    "@bufbuild/protoc-gen-es": "2.17.0",
+    "@grpc/grpc-js": "1.14.7",
+    "@grpc/proto-loader": "0.8.1",
+    "@juez/config": "workspace:*",
+    "@nestjs/common": "12.4.2",
+    "@nestjs/core": "12.4.2",
+    "@nestjs/microservices": "12.4.2",
+    "@types/node": "26.6.6",
+    "@vitest/coverage-v8": "5.1.0",
+    "eslint": "10.14.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "ts-proto": "2.18.4",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

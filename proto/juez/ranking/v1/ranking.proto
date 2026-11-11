@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package juez.ranking.v1;
+
+import "google/protobuf/timestamp.proto";
+import "juez/common/v1/common.proto";
+
+// Contests (Postgres) y scoreboard/estadísticas (Redis), alimentados por
+// `user.registered` y `submission.judged`.
+service RankingService {
+  // Requiere rol SETTER o ADMIN.
+  rpc CreateContest(CreateContestRequest) returns (CreateContestResponse);
+  rpc GetContest(GetContestRequest) returns (GetContestResponse);
+  rpc ListContests(ListContestsRequest) returns (ListContestsResponse);
+  // Scoreboard estilo ICPC.
+  rpc GetScoreboard(GetScoreboardRequest) returns (GetScoreboardResponse);
+  rpc GetUserStats(GetUserStatsRequest) returns (GetUserStatsResponse);
+}
+
+// Calculado a partir de start_time/end_time y la hora actual.
+enum ContestStatus {
+  CONTEST_STATUS_UNSPECIFIED = 0;
+  CONTEST_STATUS_UPCOMING = 1;
+  CONTEST_STATUS_RUNNING = 2;
+  CONTEST_STATUS_FINISHED = 3;
+}
+
+message Contest {
+  // UUID.
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  google.protobuf.Timestamp start_time = 4;
+  google.protobuf.Timestamp end_time = 5;
+  repeated string problem_ids = 6;
+  ContestStatus status = 7;
+  string created_by = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message CreateContestRequest {
+  string title = 1;
+  string description = 2;
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp end_time = 4;
+  repeated string problem_ids = 5;
+}
+
+message CreateContestResponse {
+  Contest contest = 1;
+}
+
+message GetContestRequest {
+  string id = 1;
+}
+
+message GetContestResponse {
+  Contest contest = 1;
+}
+
+message ListContestsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  // CONTEST_STATUS_UNSPECIFIED = sin filtro.
+  ContestStatus status = 3;
+}
+
+message ListContestsResponse {
+  repeated Contest contests = 1;
+  string next_page_token = 2;
+}
+
+message GetScoreboardRequest {
+  string contest_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+// Resultado de un participante en un problema del contest.
+message ProblemResult {
+  string problem_id = 1;
+  bool solved = 2;
+  // Envíos hasta el primer ACCEPTED inclusive (o todos, si no lo resolvió).
+  int32 attempts = 3;
+  // Minutos desde el inicio del contest hasta el ACCEPTED. 0 si no lo resolvió.
+  int32 solved_at_minute = 4;
+  // Penalización del problema: solved_at_minute + 20 * (attempts - 1). 0 si no lo resolvió.
+  int32 penalty_minutes = 5;
+  bool first_to_solve = 6;
+}
+
+message ScoreboardRow {
+  // Empates en (solved, penalty_minutes) comparten rank.
+  int32 rank = 1;
+  string user_id = 2;
+  string username = 3;
+  int32 solved = 4;
+  // Suma de la penalización de los problemas resueltos.
+  int32 penalty_minutes = 5;
+  // En el mismo orden que Contest.problem_ids.
+  repeated ProblemResult problems = 6;
+}
+
+message GetScoreboardResponse {
+  string contest_id = 1;
+  // Ordenadas por rank.
+  repeated ScoreboardRow rows = 2;
+  string next_page_token = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message GetUserStatsRequest {
+  string user_id = 1;
+}
+
+message VerdictCount {
+  juez.common.v1.Verdict verdict = 1;
+  int32 count = 2;
+}
+
+message GetUserStatsResponse {
+  string user_id = 1;
+  string username = 2;
+  // Problemas distintos con al menos un ACCEPTED.
+  int32 solved_count = 3;
+  // Problemas distintos con al menos una submission juzgada.
+  int32 attempted_count = 4;
+  int32 total_submissions = 5;
+  repeated VerdictCount verdict_counts = 6;
+  repeated string solved_problem_ids = 7;
+}

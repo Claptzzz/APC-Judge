@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - services/*
+  - packages/*
+
+# pnpm >= 10 bloquea los scripts de instalación por defecto; aquí se decide cada uno.
+allowBuilds:
+  # postinstall que enlaza el binario de buf de la plataforma.
+  '@bufbuild/buf': true
+  # postinstall que solo verifica versiones (dependencia de @grpc/proto-loader); no hace falta.
+  protobufjs: false

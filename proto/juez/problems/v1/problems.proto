@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package juez.problems.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Catálogo de problemas y casos de prueba (los archivos viven en MinIO, bucket `testcases`).
+service ProblemService {
+  // Contestants solo ven problemas publicados; SETTER/ADMIN ven todos.
+  rpc ListProblems(ListProblemsRequest) returns (ListProblemsResponse);
+  rpc GetProblem(GetProblemRequest) returns (GetProblemResponse);
+  // Requiere rol SETTER o ADMIN. El autor sale del JWT.
+  rpc CreateProblem(CreateProblemRequest) returns (CreateProblemResponse);
+  // Requiere ser el autor o ADMIN.
+  rpc UpdateProblem(UpdateProblemRequest) returns (UpdateProblemResponse);
+  // Registra un caso de prueba y devuelve URLs prefirmadas (PUT) para subir input y output.
+  rpc CreateTestcaseUploadUrl(CreateTestcaseUploadUrlRequest) returns (CreateTestcaseUploadUrlResponse);
+  // Uso exclusivo del judge: límites + URLs prefirmadas (GET) de cada caso.
+  rpc GetJudgeSpec(GetJudgeSpecRequest) returns (GetJudgeSpecResponse);
+}
+
+enum Difficulty {
+  DIFFICULTY_UNSPECIFIED = 0;
+  DIFFICULTY_EASY = 1;
+  DIFFICULTY_MEDIUM = 2;
+  DIFFICULTY_HARD = 3;
+}
+
+// Ejemplo público que se muestra en el enunciado.
+message Example {
+  string input = 1;
+  string output = 2;
+  string explanation = 3;
+}
+
+message Problem {
+  // UUID.
+  string id = 1;
+  // Identificador legible y único, p. ej. "suma-de-dos-numeros".
+  string slug = 2;
+  string title = 3;
+  // Enunciado en Markdown.
+  string statement = 4;
+  Difficulty difficulty = 5;
+  repeated string tags = 6;
+  int32 time_limit_ms = 7;
+  int32 memory_limit_mb = 8;
+  repeated Example examples = 9;
+  // Cantidad de casos de prueba con input y output subidos.
+  int32 testcase_count = 10;
+  bool published = 11;
+  string author_id = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+// Vista liviana para listados (sin enunciado).
+message ProblemSummary {
+  string id = 1;
+  string slug = 2;
+  string title = 3;
+  Difficulty difficulty = 4;
+  repeated string tags = 5;
+  bool published = 6;
+}
+
+message ListProblemsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  // Si se indica, el problema debe tener todos estos tags.
+  repeated string tags = 3;
+  // DIFFICULTY_UNSPECIFIED = sin filtro.
+  Difficulty difficulty = 4;
+}
+
+message ListProblemsResponse {
+  repeated ProblemSummary problems = 1;
+  // Vacío si no hay más páginas.
+  string next_page_token = 2;
+}
+
+message GetProblemRequest {
+  oneof key {
+    string id = 1;
+    string slug = 2;
+  }
+}
+
+message GetProblemResponse {
+  Problem problem = 1;
+}
+
+message CreateProblemRequest {
+  string slug = 1;
+  string title = 2;
+  string statement = 3;
+  Difficulty difficulty = 4;
+  repeated string tags = 5;
+  int32 time_limit_ms = 6;
+  int32 memory_limit_mb = 7;
+  repeated Example examples = 8;
+}
+
+message CreateProblemResponse {
+  Problem problem = 1;
+}
+
+// Lista explícita para distinguir "no cambiar" (campo ausente) de "dejar vacío".
+message TagList {
+  repeated string values = 1;
+}
+
+message ExampleList {
+  repeated Example values = 1;
+}
+
+// Actualización parcial: solo se modifican los campos presentes.
+message UpdateProblemRequest {
+  string id = 1;
+  optional string title = 2;
+  optional string statement = 3;
+  // DIFFICULTY_UNSPECIFIED = no cambiar.
+  Difficulty difficulty = 4;
+  optional int32 time_limit_ms = 5;
+  optional int32 memory_limit_mb = 6;
+  // Si viene, reemplaza los tags.
+  TagList tags = 7;
+  // Si viene, reemplaza los ejemplos.
+  ExampleList examples = 8;
+  optional bool published = 9;
+}
+
+message UpdateProblemResponse {
+  Problem problem = 1;
+}
+
+message CreateTestcaseUploadUrlRequest {
+  string problem_id = 1;
+  // Posición del caso (1..n). Si ya existe, se reemplazan sus archivos.
+  int32 ordinal = 2;
+}
+
+message CreateTestcaseUploadUrlResponse {
+  string testcase_id = 1;
+  // URLs prefirmadas para HTTP PUT.
+  string input_upload_url = 2;
+  string output_upload_url = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message GetJudgeSpecRequest {
+  string problem_id = 1;
+}
+
+message JudgeTestcase {
+  string id = 1;
+  int32 ordinal = 2;
+  // URLs prefirmadas para HTTP GET.
+  string input_url = 3;
+  string output_url = 4;
+}
+
+message GetJudgeSpecResponse {
+  string problem_id = 1;
+  int32 time_limit_ms = 2;
+  int32 memory_limit_mb = 3;
+  // Ordenados por ordinal.
+  repeated JudgeTestcase testcases = 4;
+  google.protobuf.Timestamp urls_expire_at = 5;
+}
