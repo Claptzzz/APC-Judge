@@ -1,0 +1,32 @@
+name: submissions
+
+on:
+  pull_request:
+    paths:
+      - 'services/submissions/**'
+      - 'packages/contracts/**'
+      - 'packages/config/**'
+      - 'proto/**'
+      - '.github/workflows/submissions.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/submissions/**'
+      - 'packages/contracts/**'
+      - 'packages/config/**'
+      - 'proto/**'
+      - '.github/workflows/submissions.yml'
+
+concurrency:
+  group: submissions-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_service-ci.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      package: '@juez/submissions'
+      path: services/submissions
