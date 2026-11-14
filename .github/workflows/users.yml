@@ -1,0 +1,32 @@
+name: users
+
+on:
+  pull_request:
+    paths:
+      - 'services/users/**'
+      - 'packages/contracts/**'
+      - 'packages/config/**'
+      - 'proto/**'
+      - '.github/workflows/users.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/users/**'
+      - 'packages/contracts/**'
+      - 'packages/config/**'
+      - 'proto/**'
+      - '.github/workflows/users.yml'
+
+concurrency:
+  group: users-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_service-ci.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      package: '@juez/users'
+      path: services/users

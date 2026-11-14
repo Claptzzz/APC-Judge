@@ -1,0 +1,46 @@
+{
+  "name": "@juez/users",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Servicio users: identidad, autenticación y emisión de JWT RS256",
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --coverage",
+    "test:int": "vitest run --config vitest.int.config.ts",
+    "start": "node dist/main.js",
+    "start:dev": "node --env-file-if-exists=../../.env.example --env-file-if-exists=../../.env dist/main.js",
+    "db:migrate": "node --env-file-if-exists=../../.env.example --env-file-if-exists=../../.env dist/migrate.js"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.17.0",
+    "@connectrpc/connect": "2.3.0",
+    "@connectrpc/connect-node": "2.3.0",
+    "@juez/contracts": "workspace:*",
+    "@prometheus-io/client": "0.16.1",
+    "drizzle-orm": "0.45.4",
+    "fastify": "5.12.8",
+    "jose": "6.2.17",
+    "kafkajs": "2.2.4",
+    "pino": "10.4.0",
+    "postgres": "3.4.9",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@grpc/grpc-js": "1.14.7",
+    "@grpc/proto-loader": "0.8.1",
+    "@juez/config": "workspace:*",
+    "@types/node": "26.6.6",
+    "@vitest/coverage-v8": "5.1.0",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ]
+}

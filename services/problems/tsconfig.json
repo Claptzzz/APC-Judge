@@ -1,0 +1,8 @@
+{
+  "extends": "@juez/config/tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": ["src", "vitest.config.ts"]
+}

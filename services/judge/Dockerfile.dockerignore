@@ -1,0 +1,17 @@
+# Contexto de build del judge (raíz del repo). BuildKit usa este archivo en lugar de un
+# .dockerignore en la raíz porque está junto al Dockerfile.
+**/node_modules
+**/dist
+**/coverage
+**/.turbo
+**/*.tsbuildinfo
+**/src/gen
+packages/contracts/proto
+.git
+.github
+.secrets
+.env
+.env.*
+!.env.example
+docs
+infra

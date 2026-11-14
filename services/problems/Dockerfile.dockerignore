@@ -1,0 +1,18 @@
+# Exclusiones del contexto (raíz del repo) para services/problems/Dockerfile (BuildKit).
+**/node_modules
+**/dist
+**/coverage
+**/.turbo
+**/*.tsbuildinfo
+**/src/gen
+packages/contracts/proto
+.git
+.github
+.secrets
+.env
+.env.*
+apps
+infra
+docs
+services/*
+!services/problems
