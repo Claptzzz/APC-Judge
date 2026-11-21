@@ -1,0 +1,16 @@
+# Contexto de build = raíz del repo. BuildKit usa este archivo al construir con
+# -f services/ranking/Dockerfile (no hace falta un .dockerignore en la raíz).
+**/node_modules
+**/dist
+**/coverage
+**/.turbo
+**/src/gen
+packages/contracts/proto
+.git
+.github
+.secrets
+**/.env
+**/.env.*
+apps
+docs
+infra
