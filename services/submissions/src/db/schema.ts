@@ -49,7 +49,9 @@ export const submissions = pgTable(
     memoryKb: integer('memory_kb').notNull().default(0),
     passedCases: integer('passed_cases').notNull().default(0),
     totalCases: integer('total_cases').notNull().default(0),
-    submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
     judgedAt: timestamp('judged_at', { withTimezone: true }),
   },
   (t) => [

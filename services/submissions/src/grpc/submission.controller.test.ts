@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RpcException } from '@nestjs/microservices';
+import * as grpc from '@grpc/grpc-js';
 import type { Metadata } from '@grpc/grpc-js';
+import { Code, ConnectError } from '@connectrpc/connect';
 import { ContestStatus } from '@juez/contracts/es';
 import { common } from '@juez/contracts/nest';
 import { SubmissionController } from './submission.controller.js';
@@ -175,6 +177,87 @@ describe('SubmissionController', () => {
           metadata as unknown as Metadata,
         ),
       ).rejects.toThrow(RpcException);
+    });
+  });
+
+  describe('createSubmission — errores de problems / ranking', () => {
+    const request = {
+      problemId: mockProblemId,
+      language: common.Language.LANGUAGE_CPP17,
+      sourceCode: 'int main() {}',
+    };
+    const contestRequest = { ...request, contestId: mockContestId };
+
+    async function rpcError(promise: Promise<unknown>) {
+      const err = await promise.then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(RpcException);
+      return (err as RpcException).getError() as { code: number; message: string };
+    }
+
+    const failingProblems = (err: unknown) =>
+      ({ getProblem: vi.fn().mockRejectedValue(err) }) as unknown as ProblemsClient;
+    const failingRanking = (err: unknown) =>
+      ({ getContest: vi.fn().mockRejectedValue(err) }) as unknown as RankingClient;
+
+    it('problems responde NotFound → NOT_FOUND', async () => {
+      const controller = createController({
+        problemsClient: failingProblems(new ConnectError('no existe', Code.NotFound)),
+      });
+      const e = await rpcError(
+        controller.createSubmission(request, metadata as unknown as Metadata),
+      );
+      expect(e.code).toBe(grpc.status.NOT_FOUND);
+      expect(e.message).toContain(mockProblemId);
+    });
+
+    it.each([
+      ['Unavailable', new ConnectError('down', Code.Unavailable)],
+      ['DeadlineExceeded', new ConnectError('timeout', Code.DeadlineExceeded)],
+      ['error de red', Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })],
+    ])('problems con %s → UNAVAILABLE "no responde"', async (_name, err) => {
+      const controller = createController({ problemsClient: failingProblems(err) });
+      const e = await rpcError(
+        controller.createSubmission(request, metadata as unknown as Metadata),
+      );
+      expect(e.code).toBe(grpc.status.UNAVAILABLE);
+      expect(e.message).toMatch(/servicio problems no responde/);
+    });
+
+    it('problems con otro error → INTERNAL', async () => {
+      const controller = createController({
+        problemsClient: failingProblems(new ConnectError('denied', Code.PermissionDenied)),
+      });
+      const e = await rpcError(
+        controller.createSubmission(request, metadata as unknown as Metadata),
+      );
+      expect(e.code).toBe(grpc.status.INTERNAL);
+    });
+
+    it('ranking responde NotFound → NOT_FOUND', async () => {
+      const controller = createController({
+        rankingClient: failingRanking(new ConnectError('no existe', Code.NotFound)),
+      });
+      const e = await rpcError(
+        controller.createSubmission(contestRequest, metadata as unknown as Metadata),
+      );
+      expect(e.code).toBe(grpc.status.NOT_FOUND);
+      expect(e.message).toContain(mockContestId);
+    });
+
+    it.each([
+      ['Unavailable', new ConnectError('down', Code.Unavailable)],
+      ['DeadlineExceeded', new ConnectError('timeout', Code.DeadlineExceeded)],
+      ['error de red', Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })],
+    ])('ranking con %s → UNAVAILABLE "no responde"', async (_name, err) => {
+      const controller = createController({ rankingClient: failingRanking(err) });
+      const e = await rpcError(
+        controller.createSubmission(contestRequest, metadata as unknown as Metadata),
+      );
+      expect(e.code).toBe(grpc.status.UNAVAILABLE);
+      expect(e.message).toMatch(/servicio ranking no responde/);
     });
   });
 

@@ -1,5 +1,6 @@
 import { Controller, Get, Header, HttpException, HttpStatus, Inject } from '@nestjs/common';
 import type { Database } from '../db/client.js';
+import type { JudgedConsumer } from '../kafka/judged.consumer.js';
 import type { Metrics } from '../metrics.js';
 import type { OutboxRelay } from '../outbox/relay.js';
 import type { EventPublisher } from '../outbox/publisher.js';
@@ -15,6 +16,8 @@ export class HealthController {
     private readonly publisher: EventPublisher,
     @Inject('OutboxRelay')
     private readonly outboxRelay: OutboxRelay,
+    @Inject('JudgedConsumer')
+    private readonly judgedConsumer: Pick<JudgedConsumer, 'readiness'>,
   ) {}
 
   @Get('health')
@@ -36,8 +39,10 @@ export class HealthController {
     const kafkaStatus = this.publisher.isConnected() ? 'ok' : 'down';
     const { consecutiveFailures, lastError } = this.outboxRelay.status;
     const outboxStatus = consecutiveFailures > 0 ? 'down' : 'ok';
+    const consumer = this.judgedConsumer.readiness.status();
+    const consumerStatus = consumer.ready ? 'ok' : 'down';
 
-    const isReady = dbStatus === 'ok';
+    const isReady = dbStatus === 'ok' && consumer.ready;
 
     const result = {
       status: isReady ? 'ready' : 'not_ready',
@@ -45,6 +50,11 @@ export class HealthController {
         database: { status: dbStatus, error: dbError },
         kafka: { status: kafkaStatus },
         outbox: { status: outboxStatus, error: lastError },
+        judgedConsumer: {
+          status: consumerStatus,
+          joined: consumer.joined,
+          crashed: consumer.crashed,
+        },
       },
     };
 

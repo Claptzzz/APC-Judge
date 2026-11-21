@@ -8,6 +8,13 @@
       "when": 1794391200000,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795176000000,
+      "tag": "0001_submitted_at_ms_precision",
+      "breakpoints": true
     }
   ]
 }

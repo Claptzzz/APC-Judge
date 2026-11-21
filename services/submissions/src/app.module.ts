@@ -130,13 +130,12 @@ export class AppModule implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     this.logger.info('inicializando AppModule...');
     await this.jwtVerifier.init();
-    await this.publisher.connect().catch((err: unknown) => {
-      this.logger.warn({ err }, 'no se pudo conectar productor Kafka al iniciar');
-    });
+    // El relay conecta el productor en cada iteración y reintenta con backoff (tope 30 s); no
+    // esperamos a Kafka aquí para no bloquear el arranque.
     this.outboxRelay.start();
-    await this.judgedConsumer.start().catch((err: unknown) => {
-      this.logger.warn({ err }, 'no se pudo iniciar consumidor submission.judged');
-    });
+    // No bloquea el arranque: si Kafka no está disponible, el consumidor reintenta en segundo
+    // plano con backoff y /ready responde 503 hasta que se una al grupo.
+    void this.judgedConsumer.start();
     this.logger.info('AppModule inicializado');
   }
 

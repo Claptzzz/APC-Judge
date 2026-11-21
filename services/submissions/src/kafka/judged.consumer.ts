@@ -4,6 +4,7 @@ import type { Consumer, EachMessagePayload, Producer } from 'kafkajs';
 import type { Logger } from '../logger.js';
 import type { Metrics } from '../metrics.js';
 import { PROTO_TO_VERDICT_NAME, type SubmissionsRepository } from '../repository.js';
+import { ConsumerReadiness } from './readiness.js';
 
 export interface JudgedConsumerDeps {
   consumer: Consumer;
@@ -13,15 +14,98 @@ export interface JudgedConsumerDeps {
   metrics: Metrics;
 }
 
+export interface JudgedConsumerOptions {
+  /** Espera antes del primer reintento de arranque (se duplica en cada fallo). */
+  initialRetryMs?: number;
+  /** Tope del backoff exponencial. */
+  maxRetryMs?: number;
+}
+
+export const DEFAULT_INITIAL_RETRY_MS = 1_000;
+export const DEFAULT_MAX_RETRY_MS = 30_000;
+
+/** Backoff exponencial: initial · 2^attempt, con tope en max. */
+export function backoffDelay(attempt: number, initialMs: number, maxMs: number): number {
+  return Math.min(initialMs * 2 ** attempt, maxMs);
+}
+
 export class JudgedConsumer {
+  /** true solo cuando connect + subscribe + run terminaron bien. */
   private running = false;
+  private starting = false;
+  private stopped = false;
+  private attempt = 0;
+  private retryTimer: NodeJS.Timeout | undefined;
+  private readonly initialRetryMs: number;
+  private readonly maxRetryMs: number;
+  readonly readiness = new ConsumerReadiness();
 
-  constructor(private readonly deps: JudgedConsumerDeps) {}
+  constructor(
+    private readonly deps: JudgedConsumerDeps,
+    opts: JudgedConsumerOptions = {},
+  ) {
+    this.initialRetryMs = opts.initialRetryMs ?? DEFAULT_INITIAL_RETRY_MS;
+    this.maxRetryMs = opts.maxRetryMs ?? DEFAULT_MAX_RETRY_MS;
+    this.readiness.track(deps.consumer);
+    // Si kafkajs decide no reiniciar tras un crash (error no reintentable), el consumidor
+    // queda desconectado: lo volvemos a arrancar con el mismo backoff.
+    deps.consumer.on(deps.consumer.events.CRASH, (event) => {
+      if (event.payload.restart || this.stopped) return;
+      this.running = false;
+      this.deps.logger.error(
+        { err: event.payload.error },
+        'consumidor submission.judged caído sin reinicio automático; reintentando',
+      );
+      this.scheduleRetry();
+    });
+  }
 
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  /**
+   * Intenta arrancar el consumidor. Nunca rechaza: si falla, programa reintentos en segundo
+   * plano con backoff exponencial (tope `maxRetryMs`) hasta conectar o hasta `stop()`.
+   */
   async start(): Promise<void> {
-    if (this.running) return;
-    this.running = true;
+    if (this.running || this.starting) return;
+    this.stopped = false;
+    this.clearRetry();
+    this.starting = true;
+    try {
+      await this.connectAndRun();
+      if (this.stopped) {
+        // stop() llegó mientras arrancábamos: no dejar el consumidor colgando.
+        await this.disconnectAll();
+        return;
+      }
+      this.running = true;
+      this.attempt = 0;
+      this.deps.logger.info(
+        { topic: Topics.SUBMISSION_JUDGED },
+        'consumidor submission.judged iniciado',
+      );
+    } catch (err) {
+      await this.disconnectAll();
+      if (!this.stopped) {
+        this.deps.logger.warn({ err }, 'no se pudo iniciar consumidor submission.judged');
+        this.scheduleRetry();
+      }
+    } finally {
+      this.starting = false;
+    }
+  }
 
+  async stop(): Promise<void> {
+    this.stopped = true;
+    this.clearRetry();
+    const wasRunning = this.running;
+    this.running = false;
+    if (wasRunning) await this.disconnectAll();
+  }
+
+  private async connectAndRun(): Promise<void> {
     await this.deps.consumer.connect();
     await this.deps.producer.connect();
 
@@ -34,17 +118,31 @@ export class JudgedConsumer {
       autoCommit: false,
       eachMessage: this.handleMessage.bind(this),
     });
-
-    this.deps.logger.info(
-      { topic: Topics.SUBMISSION_JUDGED },
-      'consumidor submission.judged iniciado',
-    );
   }
 
-  async stop(): Promise<void> {
-    if (!this.running) return;
-    this.running = false;
+  private async disconnectAll(): Promise<void> {
     await this.deps.consumer.disconnect().catch(() => {});
+    await this.deps.producer.disconnect().catch(() => {});
+  }
+
+  private scheduleRetry(): void {
+    if (this.stopped || this.retryTimer) return;
+    const delayMs = backoffDelay(this.attempt, this.initialRetryMs, this.maxRetryMs);
+    this.attempt++;
+    this.deps.logger.info(
+      { delayMs, attempt: this.attempt },
+      'reintentando arranque del consumidor submission.judged',
+    );
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      void this.start();
+    }, delayMs);
+    this.retryTimer.unref();
+  }
+
+  private clearRetry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
   }
 
   private async handleMessage({ topic, partition, message }: EachMessagePayload): Promise<void> {

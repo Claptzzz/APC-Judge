@@ -6,6 +6,7 @@ import { common, submissions } from '@juez/contracts/nest';
 import { ContestStatus } from '@juez/contracts/es';
 import { extractBearerToken } from '../auth/jwt-verifier.js';
 import type { JwtVerifier, TokenClaims } from '../auth/jwt-verifier.js';
+import { classifyUpstreamError } from '../clients/errors.js';
 import type { ProblemsClient } from '../clients/problems.client.js';
 import type { RankingClient } from '../clients/ranking.client.js';
 import type { LanguageName, SubmissionRow, VerdictName } from '../db/schema.js';
@@ -86,6 +87,26 @@ export class SubmissionController implements submissions.SubmissionServiceContro
     }
   }
 
+  /** Traduce un error de los clientes de problems / ranking a un RpcException. */
+  private upstreamError(err: unknown, service: string, notFoundMessage: string): RpcException {
+    switch (classifyUpstreamError(err)) {
+      case 'not_found':
+        return new RpcException({ code: grpc.status.NOT_FOUND, message: notFoundMessage });
+      case 'unavailable':
+        this.logger.warn({ err, service }, 'servicio dependiente no responde');
+        return new RpcException({
+          code: grpc.status.UNAVAILABLE,
+          message: `El servicio ${service} no responde; intenta nuevamente más tarde`,
+        });
+      default:
+        this.logger.error({ err, service }, 'error inesperado al consultar servicio dependiente');
+        return new RpcException({
+          code: grpc.status.INTERNAL,
+          message: `Error al consultar el servicio ${service}`,
+        });
+    }
+  }
+
   async createSubmission(
     request: submissions.CreateSubmissionRequest,
     metadata?: Metadata,
@@ -135,11 +156,12 @@ export class SubmissionController implements submissions.SubmissionServiceContro
       let problem;
       try {
         problem = await this.problemsClient.getProblem(validated.data.problemId, authHeader);
-      } catch (_err) {
-        throw new RpcException({
-          code: grpc.status.NOT_FOUND,
-          message: `El problema ${validated.data.problemId} no existe o no está accesible`,
-        });
+      } catch (err) {
+        throw this.upstreamError(
+          err,
+          'problems',
+          `El problema ${validated.data.problemId} no existe o no está accesible`,
+        );
       }
 
       // Los concursantes solo pueden enviar a problemas publicados
@@ -155,11 +177,12 @@ export class SubmissionController implements submissions.SubmissionServiceContro
         let contest;
         try {
           contest = await this.rankingClient.getContest(validated.data.contestId, authHeader);
-        } catch (_err) {
-          throw new RpcException({
-            code: grpc.status.NOT_FOUND,
-            message: `El contest ${validated.data.contestId} no existe`,
-          });
+        } catch (err) {
+          throw this.upstreamError(
+            err,
+            'ranking',
+            `El contest ${validated.data.contestId} no existe`,
+          );
         }
 
         // Validar que el contest está en curso
