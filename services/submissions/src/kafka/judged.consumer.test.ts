@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { backoffDelay, JudgedConsumer } from './judged.consumer.js';
+import { backoffDelay } from '../backoff.js';
+import { JudgedConsumer } from './judged.consumer.js';
 import type { JudgedConsumerOptions } from './judged.consumer.js';
 import { createLogger } from '../logger.js';
 import { createMetrics } from '../metrics.js';

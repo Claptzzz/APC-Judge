@@ -4,7 +4,11 @@ import * as grpc from '@grpc/grpc-js';
 import type { Metadata } from '@grpc/grpc-js';
 import { common, submissions } from '@juez/contracts/nest';
 import { ContestStatus } from '@juez/contracts/es';
-import { extractBearerToken } from '../auth/jwt-verifier.js';
+import {
+  extractBearerToken,
+  InvalidTokenError,
+  PublicKeyUnavailableError,
+} from '../auth/jwt-verifier.js';
 import type { JwtVerifier, TokenClaims } from '../auth/jwt-verifier.js';
 import { classifyUpstreamError } from '../clients/errors.js';
 import type { ProblemsClient } from '../clients/problems.client.js';
@@ -80,10 +84,28 @@ export class SubmissionController implements submissions.SubmissionServiceContro
       const claims = await this.jwtVerifier.verify(token);
       return { claims, authHeader: `Bearer ${token}` };
     } catch (err) {
-      throw new RpcException({
-        code: grpc.status.UNAUTHENTICATED,
-        message: (err as Error).message || 'No autenticado',
-      });
+      if (err instanceof PublicKeyUnavailableError) {
+        // users no responde: no es un problema del token, así que no es UNAUTHENTICATED.
+        if (classifyUpstreamError(err.cause) === 'unavailable') {
+          this.logger.warn({ err }, 'users no responde; no se puede verificar el JWT');
+          throw new RpcException({
+            code: grpc.status.UNAVAILABLE,
+            message: 'El servicio users no responde; no se puede verificar el token',
+          });
+        }
+        this.logger.error({ err }, 'error al obtener la llave pública de users');
+        throw new RpcException({
+          code: grpc.status.INTERNAL,
+          message: 'Error al obtener la llave pública de users',
+        });
+      }
+      if (err instanceof InvalidTokenError) {
+        throw new RpcException({
+          code: grpc.status.UNAUTHENTICATED,
+          message: err.message || 'No autenticado',
+        });
+      }
+      throw err;
     }
   }
 

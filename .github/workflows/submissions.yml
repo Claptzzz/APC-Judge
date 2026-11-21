@@ -7,6 +7,7 @@ on:
       - 'packages/contracts/**'
       - 'packages/config/**'
       - 'proto/**'
+      - '.github/workflows/_service-ci.yml'
       - '.github/workflows/submissions.yml'
   push:
     branches: [main]
@@ -15,6 +16,7 @@ on:
       - 'packages/contracts/**'
       - 'packages/config/**'
       - 'proto/**'
+      - '.github/workflows/_service-ci.yml'
       - '.github/workflows/submissions.yml'
 
 concurrency:

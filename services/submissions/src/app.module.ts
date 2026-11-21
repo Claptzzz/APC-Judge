@@ -129,7 +129,9 @@ export class AppModule implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     this.logger.info('inicializando AppModule...');
-    await this.jwtVerifier.init();
+    // No bloquea el arranque: si users no responde, reintenta en segundo plano con backoff
+    // y, mientras tanto, cada RPC intenta obtener la llave (UNAVAILABLE si users sigue caído).
+    void this.jwtVerifier.init();
     // El relay conecta el productor en cada iteración y reintenta con backoff (tope 30 s); no
     // esperamos a Kafka aquí para no bloquear el arranque.
     this.outboxRelay.start();
@@ -141,6 +143,7 @@ export class AppModule implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy() {
     this.logger.info('deteniendo AppModule...');
+    this.jwtVerifier.stop();
     await this.judgedConsumer.stop().catch(() => {});
     await this.outboxRelay.stop().catch(() => {});
     await this.publisher.disconnect().catch(() => {});

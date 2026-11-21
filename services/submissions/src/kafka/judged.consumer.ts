@@ -4,6 +4,7 @@ import type { Consumer, EachMessagePayload, Producer } from 'kafkajs';
 import type { Logger } from '../logger.js';
 import type { Metrics } from '../metrics.js';
 import { PROTO_TO_VERDICT_NAME, type SubmissionsRepository } from '../repository.js';
+import { backoffDelay, DEFAULT_INITIAL_RETRY_MS, DEFAULT_MAX_RETRY_MS } from '../backoff.js';
 import { ConsumerReadiness } from './readiness.js';
 
 export interface JudgedConsumerDeps {
@@ -19,14 +20,6 @@ export interface JudgedConsumerOptions {
   initialRetryMs?: number;
   /** Tope del backoff exponencial. */
   maxRetryMs?: number;
-}
-
-export const DEFAULT_INITIAL_RETRY_MS = 1_000;
-export const DEFAULT_MAX_RETRY_MS = 30_000;
-
-/** Backoff exponencial: initial · 2^attempt, con tope en max. */
-export function backoffDelay(attempt: number, initialMs: number, maxMs: number): number {
-  return Math.min(initialMs * 2 ** attempt, maxMs);
 }
 
 export class JudgedConsumer {

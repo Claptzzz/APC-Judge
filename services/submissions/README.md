@@ -64,6 +64,10 @@ hacia el cliente de `CreateSubmission`:
   decide no reiniciar tras un crash (error no reintentable), el consumidor se vuelve a arrancar
   con el mismo backoff.
 - El relay del outbox reintenta con backoff (tope 30 s) y reconecta el productor en cada intento.
+- La llave pública de users (`GetPublicKey`, timeout 3 s) se pide al arrancar sin bloquearlo; si
+  users no responde se reintenta en segundo plano con backoff (tope 30 s) y en cada RPC. Mientras
+  no haya llave, las RPC responden `UNAVAILABLE`; `UNAUTHENTICATED` queda solo para tokens
+  ausentes o inválidos.
 
 ## Paginación
 

@@ -9,6 +9,7 @@ import { SubmissionController } from './submission.controller.js';
 import { createLogger } from '../logger.js';
 import { createMetrics } from '../metrics.js';
 import type { SubmissionsRepository } from '../repository.js';
+import { InvalidTokenError, PublicKeyUnavailableError } from '../auth/jwt-verifier.js';
 import type { JwtVerifier } from '../auth/jwt-verifier.js';
 import type { ProblemsClient } from '../clients/problems.client.js';
 import type { RankingClient } from '../clients/ranking.client.js';
@@ -258,6 +259,82 @@ describe('SubmissionController', () => {
       );
       expect(e.code).toBe(grpc.status.UNAVAILABLE);
       expect(e.message).toMatch(/servicio ranking no responde/);
+    });
+  });
+
+  describe('autenticación', () => {
+    const request = {
+      problemId: mockProblemId,
+      language: common.Language.LANGUAGE_CPP17,
+      sourceCode: 'int main() {}',
+    };
+    const verifierFailingWith = (err: unknown) =>
+      ({ verify: vi.fn().mockRejectedValue(err) }) as unknown as JwtVerifier;
+
+    async function codeOf(promise: Promise<unknown>) {
+      const err = await promise.then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(RpcException);
+      return (err as RpcException).getError() as { code: number; message: string };
+    }
+
+    it('token inválido → UNAUTHENTICATED', async () => {
+      const controller = createController({
+        jwtVerifier: verifierFailingWith(new InvalidTokenError('Token expirado')),
+      });
+      const e = await codeOf(controller.createSubmission(request, metadata as unknown as Metadata));
+      expect(e.code).toBe(grpc.status.UNAUTHENTICATED);
+      expect(e.message).toBe('Token expirado');
+    });
+
+    it('sin header de authorization → UNAUTHENTICATED', async () => {
+      const controller = createController();
+      const e = await codeOf(
+        controller.getSubmission({ id: mockSubmissionId }, { get: () => undefined } as never),
+      );
+      expect(e.code).toBe(grpc.status.UNAUTHENTICATED);
+    });
+
+    it.each([
+      ['Unavailable', new ConnectError('down', Code.Unavailable)],
+      ['DeadlineExceeded', new ConnectError('timeout', Code.DeadlineExceeded)],
+      ['error de red', Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })],
+    ])('users con %s → UNAVAILABLE (no UNAUTHENTICATED)', async (_name, cause) => {
+      const controller = createController({
+        jwtVerifier: verifierFailingWith(new PublicKeyUnavailableError('x', { cause })),
+      });
+      for (const call of [
+        controller.createSubmission(request, metadata as unknown as Metadata),
+        controller.getSubmission({ id: mockSubmissionId }, metadata as unknown as Metadata),
+        controller.listSubmissions(
+          { pageSize: 10, pageToken: '' },
+          metadata as unknown as Metadata,
+        ),
+      ]) {
+        const e = await codeOf(call);
+        expect(e.code).toBe(grpc.status.UNAVAILABLE);
+        expect(e.message).toMatch(/servicio users no responde/);
+      }
+    });
+
+    it('otro error de users al obtener la llave → INTERNAL', async () => {
+      const controller = createController({
+        jwtVerifier: verifierFailingWith(
+          new PublicKeyUnavailableError('x', {
+            cause: new ConnectError('boom', Code.Internal),
+          }),
+        ),
+      });
+      const e = await codeOf(controller.getSubmission({ id: mockSubmissionId }, metadata as never));
+      expect(e.code).toBe(grpc.status.INTERNAL);
+    });
+
+    it('error inesperado del verificador → INTERNAL', async () => {
+      const controller = createController({ jwtVerifier: verifierFailingWith(new Error('bug')) });
+      const e = await codeOf(controller.getSubmission({ id: mockSubmissionId }, metadata as never));
+      expect(e.code).toBe(grpc.status.INTERNAL);
     });
   });
 
