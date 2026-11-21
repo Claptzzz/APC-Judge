@@ -1,0 +1,30 @@
+name: mcp
+
+on:
+  pull_request:
+    paths:
+      - 'services/mcp/**'
+      - 'packages/contracts/**'
+      - 'packages/config/**'
+      - 'proto/**'
+      - '.github/workflows/mcp.yml'
+      - '.github/workflows/_service-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/mcp/**'
+      - 'packages/contracts/**'
+      - 'packages/config/**'
+      - 'proto/**'
+      - '.github/workflows/mcp.yml'
+      - '.github/workflows/_service-ci.yml'
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_service-ci.yml
+    permissions:
+      contents: read
+      packages: write # necesario para publicar en GHCR
+    with:
+      package: '@juez/mcp'
+      path: services/mcp
