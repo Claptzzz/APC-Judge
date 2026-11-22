@@ -1,0 +1,18 @@
+{
+  "extends": "@juez/config/tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src", "vite.config.ts", "vitest.config.ts", "codegen.ts"]
+}

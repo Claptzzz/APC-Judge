@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Juez online de programación competitiva" />
+    <meta name="theme-color" content="#4f46e5" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Juez Online</title>
+    <script>
+      // Aplica el tema antes de pintar para evitar el parpadeo claro → oscuro.
+      try {
+        var t = localStorage.getItem('juez.theme');
+        var dark =
+          t === 'dark' ||
+          ((!t || t === 'system') && matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('dark');
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <noscript>Esta aplicación necesita JavaScript.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

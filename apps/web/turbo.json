@@ -1,0 +1,19 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "generate": {
+      "inputs": [
+        "$TURBO_ROOT$/packages/contracts/graphql/schema.graphql",
+        "codegen.ts",
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "!src/gen/**"
+      ],
+      "outputs": ["src/gen/**"]
+    },
+    "build": {
+      "outputs": ["dist/**"]
+    }
+  }
+}
