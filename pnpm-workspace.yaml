@@ -9,3 +9,5 @@ allowBuilds:
   '@bufbuild/buf': true
   # postinstall que solo verifica versiones (dependencia de @grpc/proto-loader); no hace falta.
   protobufjs: false
+  # postinstall que solo verifica versiones (dependencia de @apollo/server); no hace falta.
+  '@apollo/protobufjs': false
