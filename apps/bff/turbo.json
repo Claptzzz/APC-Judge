@@ -1,0 +1,10 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "generate": {
+      "inputs": ["scripts/**", "$TURBO_ROOT$/packages/contracts/graphql/**"],
+      "outputs": ["src/gen/**"]
+    }
+  }
+}
