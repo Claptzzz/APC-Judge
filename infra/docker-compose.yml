@@ -23,7 +23,9 @@ services:
       RANKING_DB_USER: ${RANKING_DB_USER:-ranking_svc}
       RANKING_DB_PASSWORD: ${RANKING_DB_PASSWORD:-ranking_svc_dev}
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      # En el host se publica en 55432 (el 5432 suele estar ocupado por un Postgres del
+      # sistema). Dentro de la red de docker sigue siendo postgres:5432.
+      - '${POSTGRES_PORT:-55432}:5432'
     volumes:
       # Desde postgres 18 la imagen declara el volumen en /var/lib/postgresql.
       - postgres-data:/var/lib/postgresql

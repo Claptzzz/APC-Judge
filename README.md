@@ -7,6 +7,7 @@ Taller de **Arquitectura de Software (UCN)**.
 - Decisiones: [`docs/adr/`](docs/adr/)
 - Guía para agentes y convenciones: [`CLAUDE.md`](CLAUDE.md)
 - Ficha de cada componente: `apps/*/README.md` y `services/*/README.md`
+- API GraphQL del frontend: [`packages/contracts/graphql/schema.graphql`](packages/contracts/graphql/schema.graphql)
 
 ## Requisitos
 
@@ -44,5 +45,11 @@ pnpm test
 | `pnpm jwt:keys`                                    | Par de llaves RS256 de desarrollo                            |
 | `pnpm format` / `format:check`                     | Prettier                                                     |
 
-Si el puerto 5432 ya está ocupado en tu máquina: `POSTGRES_PORT=5433 pnpm infra:up`
-(y ajusta `*_DATABASE_URL` en tu `.env`).
+Postgres se publica en el host en el puerto **55432** (no 5432, que suele ocupar un Postgres
+del sistema); las `*_DATABASE_URL` de `.env.example` ya apuntan a `localhost:55432`. Para usar
+otro puerto: `POSTGRES_PORT=55433` en tu `.env` y el mismo puerto en todas las
+`*_DATABASE_URL`.
+
+Para el asistente (BFF) hace falta Gemini: una API key de Google AI Studio
+(`GEMINI_API_KEY`) o un proyecto de Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=true`,
+`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`). Ver la sección Gemini de `.env.example`.

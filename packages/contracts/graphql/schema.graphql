@@ -1,0 +1,568 @@
+"""
+API GraphQL del juez online, servida por el BFF en `/graphql` (HTTP para queries y mutations,
+`graphql-ws` en la misma ruta para subscriptions). Contrato schema-first: el BFF implementa
+este archivo y el frontend genera sus tipos a partir de él.
+
+**Autenticación.** El token de `login`/`register` se envía como `Authorization: Bearer <jwt>`
+(HTTP) o como `connectionParams.authorization` (WebSocket). Cada operación indica su acceso:
+
+- **Público:** no requiere token. Si se envía uno, debe ser válido.
+- **Autenticado:** cualquier usuario con sesión (CONTESTANT, SETTER o ADMIN).
+- **SETTER/ADMIN**, **autor o ADMIN**, **dueño o ADMIN:** según se indique.
+
+**Errores.** Van en `errors[].extensions.code`:
+`UNAUTHENTICATED` (sin token o token inválido/expirado), `FORBIDDEN` (rol insuficiente),
+`NOT_FOUND`, `BAD_USER_INPUT` (datos inválidos), `CONFLICT` (username, email o slug ya
+usados), `UNAVAILABLE` (un servicio no responde; reintentar más tarde) e
+`INTERNAL_SERVER_ERROR`. Las queries de detalle (`problem`, `submission`, `contest`, `user`)
+devuelven `null` en vez de `NOT_FOUND`.
+
+**Paginación.** Los listados reciben `pageSize` y `pageToken` y devuelven `items` y
+`nextPageToken`; `nextPageToken` es `null` en la última página. Para la siguiente página se
+repite la query con los mismos filtros y `pageToken: nextPageToken`.
+"""
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+"""
+Fecha y hora en ISO 8601 / RFC 3339, siempre en UTC con milisegundos, p. ej.
+`2026-11-22T15:04:05.123Z`. Como entrada acepta cualquier offset (`-03:00`).
+"""
+scalar DateTime @specifiedBy(url: "https://datatracker.ietf.org/doc/html/rfc3339")
+
+# =============================================================================
+# Enums (equivalentes a los del proto, sin el valor UNSPECIFIED: "sin valor" es null)
+# =============================================================================
+
+"Rol del usuario (claim `role` del JWT)."
+enum Role {
+  "Participa en contests y envía soluciones. Rol con el que se registra todo usuario."
+  CONTESTANT
+  "Crea y edita problemas y contests."
+  SETTER
+  "Acceso total."
+  ADMIN
+}
+
+"Lenguajes que soporta el judge."
+enum Language {
+  "C++17 (`g++ -O2 -std=gnu++17`)."
+  CPP17
+  "Python 3."
+  PYTHON3
+}
+
+"""
+Estado de una submission. `PENDING` y `JUDGING` son transitorios; el resto son veredictos
+finales.
+"""
+enum Verdict {
+  "En cola para el judge."
+  PENDING
+  "El judge la está evaluando."
+  JUDGING
+  ACCEPTED
+  WRONG_ANSWER
+  TIME_LIMIT_EXCEEDED
+  MEMORY_LIMIT_EXCEEDED
+  RUNTIME_ERROR
+  COMPILATION_ERROR
+  "Falla del juez, no de la solución."
+  INTERNAL_ERROR
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+"Estado de un contest, calculado con la hora actual."
+enum ContestStatus {
+  "Todavía no empieza."
+  UPCOMING
+  "En curso: acepta submissions."
+  RUNNING
+  FINISHED
+}
+
+"Autor de un mensaje del historial del asistente."
+enum AssistantRole {
+  USER
+  ASSISTANT
+}
+
+# =============================================================================
+# Usuarios y autenticación
+# =============================================================================
+
+type User {
+  id: ID!
+  username: String!
+  "Solo visible para el propio usuario o un ADMIN; `null` para los demás."
+  email: String
+  role: Role!
+  createdAt: DateTime!
+}
+
+"Resultado de `register` y `login`."
+type AuthPayload {
+  "JWT RS256. Se envía como `Authorization: Bearer <token>`."
+  token: String!
+  "Vencimiento del token (1 h en desarrollo). Después hay que volver a iniciar sesión."
+  expiresAt: DateTime!
+  user: User!
+}
+
+input RegisterInput {
+  "3 a 32 caracteres `[A-Za-z0-9_-]`, único sin distinguir mayúsculas."
+  username: String!
+  "Email válido y único; se guarda en minúsculas."
+  email: String!
+  "8 a 128 caracteres."
+  password: String!
+}
+
+input LoginInput {
+  "Username o email (sin distinguir mayúsculas)."
+  usernameOrEmail: String!
+  password: String!
+}
+
+# =============================================================================
+# Problemas
+# =============================================================================
+
+"Ejemplo público que se muestra en el enunciado."
+type Example {
+  input: String!
+  output: String!
+  "`null` si el ejemplo no trae explicación."
+  explanation: String
+}
+
+type Problem {
+  id: ID!
+  "Identificador legible y único, p. ej. `suma-de-dos-numeros`. Sirve para URLs."
+  slug: String!
+  title: String!
+  "Enunciado en Markdown."
+  statement: String!
+  difficulty: Difficulty!
+  "En minúsculas, sin duplicados."
+  tags: [String!]!
+  timeLimitMs: Int!
+  memoryLimitMb: Int!
+  examples: [Example!]!
+  "Casos de prueba con input y output ya subidos."
+  testcaseCount: Int!
+  "Los problemas sin publicar solo los ven SETTER y ADMIN."
+  published: Boolean!
+  authorId: ID!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+"Vista liviana de un problema para listados (sin enunciado)."
+type ProblemSummary {
+  id: ID!
+  slug: String!
+  title: String!
+  difficulty: Difficulty!
+  tags: [String!]!
+  published: Boolean!
+}
+
+type ProblemPage {
+  items: [ProblemSummary!]!
+  "`null` si no hay más páginas."
+  nextPageToken: String
+}
+
+"Filtros combinables del catálogo. Un campo omitido o `null` no filtra."
+input ProblemFilter {
+  "El problema debe tener **todos** estos tags."
+  tags: [String!]
+  difficulty: Difficulty
+}
+
+input ExampleInput {
+  input: String!
+  output: String!
+  explanation: String
+}
+
+input CreateProblemInput {
+  "Opcional: si se omite se genera desde el título (`A + B` → `a-mas-b`)."
+  slug: String
+  "Hasta 200 caracteres."
+  title: String!
+  "Markdown, hasta 100.000 caracteres."
+  statement: String!
+  difficulty: Difficulty!
+  "Hasta 20 tags de hasta 40 caracteres."
+  tags: [String!] = []
+  "100 a 20.000 ms. Por defecto 1000."
+  timeLimitMs: Int
+  "16 a 2048 MB. Por defecto 256."
+  memoryLimitMb: Int
+  "Hasta 20 ejemplos."
+  examples: [ExampleInput!] = []
+}
+
+"""
+Actualización parcial: solo cambian los campos presentes y no nulos. `tags` y `examples`
+reemplazan la lista completa (`[]` la vacía).
+"""
+input UpdateProblemInput {
+  title: String
+  statement: String
+  difficulty: Difficulty
+  timeLimitMs: Int
+  memoryLimitMb: Int
+  tags: [String!]
+  examples: [ExampleInput!]
+  published: Boolean
+}
+
+"""
+URLs prefirmadas para subir los archivos de un caso de prueba directo a MinIO con
+`HTTP PUT` (el cuerpo es el contenido del archivo). El caso cuenta en `testcaseCount` cuando
+ambos archivos están subidos.
+"""
+type TestcaseUpload {
+  testcaseId: ID!
+  ordinal: Int!
+  inputUploadUrl: String!
+  outputUploadUrl: String!
+  "Las URLs dejan de servir después de esta fecha (15 min en desarrollo)."
+  expiresAt: DateTime!
+}
+
+# =============================================================================
+# Submissions
+# =============================================================================
+
+type Submission {
+  id: ID!
+  userId: ID!
+  "Autor de la submission. `null` si users no responde (el resto de la submission sí llega)."
+  user: User
+  problemId: ID!
+  "`null` si quien consulta no puede ver el problema (p. ej. uno que se despublicó)."
+  problem: ProblemSummary
+  "`null` si se envió fuera de un contest."
+  contestId: ID
+  "`null` si se envió fuera de un contest."
+  contest: Contest
+  language: Language!
+  """
+  Código enviado. Solo para el dueño o un ADMIN y solo en `submission(id)`; `null` en
+  listados y para los demás usuarios.
+  """
+  sourceCode: String
+  verdict: Verdict!
+  "Tiempo máximo entre los casos ejecutados. `null` mientras no haya veredicto final."
+  timeMs: Int
+  "Memoria máxima (RSS) entre los casos ejecutados. `null` mientras no haya veredicto final."
+  memoryKb: Int
+  "Casos aceptados antes del primer fallo. `null` mientras no haya veredicto final."
+  passedCases: Int
+  "`null` mientras no haya veredicto final."
+  totalCases: Int
+  submittedAt: DateTime!
+  "`null` mientras no haya veredicto final."
+  judgedAt: DateTime
+}
+
+type SubmissionPage {
+  "Ordenadas por `submittedAt` descendente (las más recientes primero)."
+  items: [Submission!]!
+  "`null` si no hay más páginas."
+  nextPageToken: String
+}
+
+"Filtros combinables. Un campo omitido o `null` no filtra."
+input SubmissionFilter {
+  "Para \"mis submissions\", el `id` de `me`."
+  userId: ID
+  problemId: ID
+  contestId: ID
+}
+
+input SubmitInput {
+  problemId: ID!
+  language: Language!
+  sourceCode: String!
+  "Para enviar dentro de un contest: debe estar en curso e incluir el problema."
+  contestId: ID
+}
+
+# =============================================================================
+# Contests, scoreboard y estadísticas
+# =============================================================================
+
+"Problema de un contest con su letra."
+type ContestProblem {
+  "A, B, C… en el orden del contest."
+  letter: String!
+  problemId: ID!
+  "`null` si el usuario no puede verlo (p. ej. un problema sin publicar para un CONTESTANT)."
+  problem: ProblemSummary
+}
+
+type Contest {
+  id: ID!
+  title: String!
+  description: String!
+  startTime: DateTime!
+  endTime: DateTime!
+  status: ContestStatus!
+  "En orden (A, B, C…). Entre 1 y 26 problemas."
+  problems: [ContestProblem!]!
+  createdById: ID!
+  createdAt: DateTime!
+}
+
+type ContestPage {
+  "Ordenados por `startTime` descendente."
+  items: [Contest!]!
+  "`null` si no hay más páginas."
+  nextPageToken: String
+}
+
+input CreateContestInput {
+  title: String!
+  description: String! = ""
+  startTime: DateTime!
+  "Debe ser posterior a `startTime`."
+  endTime: DateTime!
+  "Entre 1 y 26 problemas existentes, sin repetir; el orden define las letras A, B, C…"
+  problemIds: [ID!]!
+}
+
+"Resultado de un participante en un problema del contest."
+type ProblemResult {
+  letter: String!
+  problemId: ID!
+  solved: Boolean!
+  """
+  Envíos hasta el primer ACCEPTED inclusive (o todos si no lo resolvió). No cuentan
+  COMPILATION_ERROR ni INTERNAL_ERROR.
+  """
+  attempts: Int!
+  "Minutos desde el inicio del contest hasta el ACCEPTED. `null` si no lo resolvió."
+  solvedAtMinute: Int
+  "`solvedAtMinute + 20 × (attempts − 1)`. `null` si no lo resolvió."
+  penaltyMinutes: Int
+  "Fue el primero del contest en resolverlo."
+  firstToSolve: Boolean!
+}
+
+"Fila del scoreboard estilo ICPC."
+type ScoreboardRow {
+  "Los empates en (`solved`, `penaltyMinutes`) comparten rank."
+  rank: Int!
+  userId: ID!
+  "El `userId` si ranking todavía no conoce el username."
+  username: String!
+  solved: Int!
+  "Suma de la penalización de los problemas resueltos."
+  penaltyMinutes: Int!
+  "Un resultado por problema, en el orden del contest."
+  problems: [ProblemResult!]!
+}
+
+"Scoreboard paginado de un contest."
+type Scoreboard {
+  contestId: ID!
+  "Ordenadas por rank."
+  items: [ScoreboardRow!]!
+  "`null` si no hay más páginas."
+  nextPageToken: String
+  "Última actualización del scoreboard."
+  updatedAt: DateTime
+}
+
+type VerdictCount {
+  verdict: Verdict!
+  count: Int!
+}
+
+"Estadísticas de un usuario sobre todas sus submissions juzgadas (con o sin contest)."
+type UserStats {
+  userId: ID!
+  username: String!
+  "Problemas distintos con al menos un ACCEPTED."
+  solvedCount: Int!
+  "Problemas distintos con al menos una submission juzgada."
+  attemptedCount: Int!
+  totalSubmissions: Int!
+  verdictCounts: [VerdictCount!]!
+  solvedProblemIds: [ID!]!
+}
+
+# =============================================================================
+# Asistente
+# =============================================================================
+
+"Mensaje previo de la conversación. El cliente guarda el historial; el BFF no tiene estado."
+input AssistantMessageInput {
+  role: AssistantRole!
+  content: String!
+}
+
+"Llamada a una tool del MCP server que hizo el modelo para responder."
+type AssistantToolCall {
+  "Nombre de la tool, p. ej. `ver_scoreboard`."
+  name: String!
+  "Argumentos de la llamada serializados como JSON."
+  arguments: String!
+  "La tool respondió con error (p. ej. el recurso no existe o un servicio no responde)."
+  isError: Boolean!
+}
+
+type AssistantAnswer {
+  "Respuesta en lenguaje natural (Markdown)."
+  message: String!
+  "Tools que se usaron, en orden de llamada. Vacío si respondió sin consultar datos."
+  toolCalls: [AssistantToolCall!]!
+}
+
+# =============================================================================
+# Señales en vivo
+# =============================================================================
+
+"Aviso de que el scoreboard de un contest cambió."
+type ScoreboardUpdate {
+  contestId: ID!
+  "Submission juzgada que provocó el cambio."
+  submissionId: ID!
+  "Cuándo se juzgó."
+  judgedAt: DateTime!
+}
+
+# =============================================================================
+# Operaciones
+# =============================================================================
+
+type Query {
+  "El usuario de la sesión, con su email. **Acceso:** autenticado."
+  me: User!
+
+  "Perfil de un usuario. `null` si no existe. **Acceso:** autenticado."
+  user(id: ID!): User
+
+  """
+  Catálogo de problemas con filtros. Anónimos y CONTESTANT solo ven problemas publicados.
+  `pageSize` por defecto 20, máximo 100. **Acceso:** público.
+  """
+  problems(filter: ProblemFilter, pageSize: Int, pageToken: String): ProblemPage!
+
+  """
+  Detalle de un problema por `id` **o** `slug` (exactamente uno). `null` si no existe o si
+  no está publicado y quien consulta no es SETTER/ADMIN. **Acceso:** público.
+  """
+  problem(id: ID, slug: String): Problem
+
+  """
+  Detalle de una submission. `null` si no existe. `sourceCode` solo para el dueño o un
+  ADMIN. **Acceso:** autenticado.
+  """
+  submission(id: ID!): Submission
+
+  "Listado de submissions con filtros. Sin `sourceCode`. **Acceso:** autenticado."
+  submissions(filter: SubmissionFilter, pageSize: Int, pageToken: String): SubmissionPage!
+
+  "Detalle de un contest. `null` si no existe. **Acceso:** autenticado."
+  contest(id: ID!): Contest
+
+  """
+  Listado de contests, opcionalmente filtrado por estado. `pageSize` por defecto 20, máximo
+  100. **Acceso:** autenticado.
+  """
+  contests(status: ContestStatus, pageSize: Int, pageToken: String): ContestPage!
+
+  """
+  Scoreboard ICPC del contest: más resueltos y luego menor penalización. Un participante
+  aparece desde su primera submission dentro de la ventana del contest. `pageSize` por
+  defecto 50, máximo 200. **Acceso:** autenticado.
+  """
+  scoreboard(contestId: ID!, pageSize: Int, pageToken: String): Scoreboard!
+
+  "Estadísticas de un usuario; sin `userId`, las propias. **Acceso:** autenticado."
+  userStats(userId: ID): UserStats!
+}
+
+type Mutation {
+  """
+  Crea una cuenta con rol CONTESTANT e inicia sesión (devuelve el token). Errores:
+  `BAD_USER_INPUT`, `CONFLICT` si el username o el email ya existen. **Acceso:** público.
+  """
+  register(input: RegisterInput!): AuthPayload!
+
+  """
+  Inicia sesión. Credenciales incorrectas → `UNAUTHENTICATED` (mismo error si el usuario no
+  existe). **Acceso:** público.
+  """
+  login(input: LoginInput!): AuthPayload!
+
+  """
+  Crea un problema sin publicar, con quien lo crea como autor. `CONFLICT` si el slug ya
+  existe. **Acceso:** SETTER/ADMIN.
+  """
+  createProblem(input: CreateProblemInput!): Problem!
+
+  "Actualización parcial de un problema (incluida su publicación). **Acceso:** autor (SETTER) o ADMIN."
+  updateProblem(id: ID!, input: UpdateProblemInput!): Problem!
+
+  """
+  Registra el caso de prueba `ordinal` (1 a 1000) del problema y devuelve URLs para subir sus
+  archivos; si el caso ya existe, sus archivos se reemplazan. **Acceso:** autor (SETTER) o
+  ADMIN.
+  """
+  createTestcaseUploadUrl(problemId: ID!, ordinal: Int!): TestcaseUpload!
+
+  """
+  Envía una solución. Responde de inmediato con la submission en `PENDING`; el veredicto
+  llega por `submissionUpdated`. `NOT_FOUND` si el problema (o el contest) no existe;
+  `BAD_USER_INPUT` si el contest no está en curso o no incluye el problema.
+  **Acceso:** autenticado.
+  """
+  submit(input: SubmitInput!): Submission!
+
+  """
+  Crea un contest con los problemas indicados (se validan contra el catálogo).
+  **Acceso:** SETTER/ADMIN.
+  """
+  createContest(input: CreateContestInput!): Contest!
+
+  """
+  Pregunta al asistente (Gemini con las tools de solo lectura del MCP server). Consulta los
+  datos con la identidad del usuario: solo ve lo que el usuario puede ver. `history` son los
+  mensajes previos de la conversación, del más antiguo al más reciente, sin incluir
+  `message`. **Acceso:** autenticado.
+  """
+  askAssistant(message: String!, history: [AssistantMessageInput!] = []): AssistantAnswer!
+}
+
+type Subscription {
+  """
+  Estado de una submission en vivo. Al suscribirse emite el estado actual si ya tiene
+  veredicto final (cubre el caso en que el judge termina antes de que el cliente se
+  suscriba) y después cada cambio de veredicto. Emite el mismo tipo `Submission`, así que la
+  cache del cliente se actualiza sola. **Acceso:** dueño de la submission o ADMIN.
+  """
+  submissionUpdated(id: ID!): Submission!
+
+  """
+  Señal de que el scoreboard del contest cambió (se juzgó una submission del contest). No
+  trae filas: el cliente vuelve a pedir `scoreboard`, idealmente agrupando señales seguidas
+  (debounce). Ranking actualiza el scoreboard de forma asíncrona, así que una recarga
+  inmediata puede no reflejar todavía el cambio. **Acceso:** autenticado.
+  """
+  scoreboardUpdated(contestId: ID!): ScoreboardUpdate!
+}

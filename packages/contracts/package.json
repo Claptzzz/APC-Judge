@@ -2,7 +2,7 @@
   "name": "@juez/contracts",
   "version": "0.0.0",
   "private": true,
-  "description": "Contratos del juez online: código generado desde proto/ (protobuf-es y ts-proto/Nest), topics Kafka y helpers de eventos",
+  "description": "Contratos del juez online: código generado desde proto/ (protobuf-es y ts-proto/Nest), topics Kafka, helpers de eventos y schema GraphQL del BFF",
   "type": "module",
   "exports": {
     ".": {
@@ -20,11 +20,16 @@
     "./proto": {
       "types": "./dist/proto.d.ts",
       "default": "./dist/proto.js"
+    },
+    "./graphql": {
+      "types": "./dist/graphql.d.ts",
+      "default": "./dist/graphql.js"
     }
   },
   "files": [
     "dist",
-    "proto"
+    "proto",
+    "graphql"
   ],
   "scripts": {
     "generate": "buf generate && node scripts/copy-proto.mjs",
@@ -64,6 +69,7 @@
     "@types/node": "26.6.6",
     "@vitest/coverage-v8": "5.1.0",
     "eslint": "10.14.0",
+    "graphql": "16.15.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "ts-proto": "2.18.4",

@@ -13,7 +13,7 @@ flowchart LR
 
   subgraph Edge
     bff["bff<br/>NestJS + GraphQL"]
-    mcp["mcp<br/>MCP SDK (Streamable HTTP)"]
+    mcp["mcp<br/>MCP SDK v2 (Streamable HTTP sin estado)"]
   end
 
   subgraph Servicios
@@ -28,13 +28,13 @@ flowchart LR
     pgu[("PG users")]
     pgp[("PG problems")]
     pgs[("PG submissions<br/>+ outbox")]
-    pgr[("PG ranking")]
-    redis[("Redis")]
+    pgr[("PG ranking<br/>contests, stats, usernames")]
+    redis[("Redis<br/>proyección del scoreboard")]
     minio[("MinIO<br/>testcases")]
     kafka{{"Kafka"}}
   end
 
-  gemini(["Gemini<br/>Vertex AI"])
+  gemini(["Gemini<br/>AI Studio o Vertex AI"])
 
   web -- "GraphQL HTTP + graphql-ws" --> bff
   bff -- gRPC --> users & problems & submissions & ranking
@@ -78,7 +78,8 @@ key = id del agregado).
 | ranking     | 8084 | 50054 |
 | judge       | 8085 | —     |
 
-Infraestructura: Postgres 5432, Redis 6379, Kafka 9092 (host; `kafka:29092` dentro de la red
+Infraestructura: Postgres **55432** en el host (`postgres:5432` dentro de la red de docker;
+55432 porque el 5432 suele estar ocupado por un Postgres del sistema), Redis 6379, Kafka 9092 (host; `kafka:29092` dentro de la red
 de docker), Kafka UI 8080, MinIO 9000 (API) / 9001 (consola).
 
 ## Componentes
@@ -92,7 +93,7 @@ de docker), Kafka UI 8080, MinIO 9000 (API) / 9001 (consola).
 | submissions | NestJS híbrido (gRPC + Kafka + HTTP) | Postgres + outbox | [services/submissions](../services/submissions/README.md) |
 | ranking     | Hono + ConnectRPC                    | Postgres + Redis  | [services/ranking](../services/ranking/README.md)         |
 | judge       | Node sin framework (`node:http`)     | —                 | [services/judge](../services/judge/README.md)             |
-| mcp         | MCP TypeScript SDK                   | —                 | [services/mcp](../services/mcp/README.md)                 |
+| mcp         | MCP TypeScript SDK v2 (sin estado)   | —                 | [services/mcp](../services/mcp/README.md)                 |
 
 **gRPC en servicios no-Nest:** se sirve con `@connectrpc/connect-node` en un servidor
 **HTTP/2 separado** del framework web, porque los clientes `@grpc/grpc-js` del BFF y de
@@ -100,9 +101,27 @@ submissions requieren HTTP/2. El framework web atiende `/health` y `/metrics`.
 
 **Kafka:** todos usan `kafkajs` (el mismo cliente que usa `@nestjs/microservices`).
 
+**ranking:** Postgres es la fuente de verdad (contests, usernames proyectados desde
+`user.registered`, submissions juzgadas y `processed_events`); las estadísticas de usuario se
+calculan desde Postgres. Redis guarda **solo una proyección del scoreboard**, recalculada desde
+Postgres y reconstruible con `scoreboard:rebuild`; si Redis cae, el scoreboard se calcula desde
+Postgres.
+
+**mcp:** usa el MCP TypeScript SDK **v2** (paquetes `@modelcontextprotocol/server` y
+`@modelcontextprotocol/node`; `@modelcontextprotocol/client` es el cliente) con Streamable
+HTTP en modo **sin estado** (stateless): un `McpServer` nuevo por request, sin sesiones. El
+BFF puede usar el cliente v2 (`@modelcontextprotocol/client`) o uno v1.
+
 ## Contratos
 
-- Fuente única: [`proto/`](../proto) (buf v2, lint STANDARD, breaking FILE contra `main`).
+- Fuente única de gRPC y eventos: [`proto/`](../proto) (buf v2, lint STANDARD, breaking FILE
+  contra `main`).
+- API del frontend: schema GraphQL **schema-first** en
+  [`packages/contracts/graphql/schema.graphql`](../packages/contracts/graphql/schema.graphql),
+  exportado como `@juez/contracts/graphql` (`GRAPHQL_SCHEMA_PATH`, la ruta al archivo). El BFF
+  lo implementa y el frontend genera sus tipos desde él. Usa el lenguaje del front (enums sin
+  `UNSPECIFIED`, fechas `DateTime` ISO 8601, paginación `items` + `nextPageToken`) y documenta
+  en cada operación quién puede usarla.
 - `@juez/contracts` genera, en su build, `src/gen/es` (protobuf-es v2, para Connect y para
   serializar eventos) y `src/gen/nest` (ts-proto `nestJs=true`, para Nest). El código
   generado no se commitea.
@@ -127,11 +146,16 @@ submissions requieren HTTP/2. El framework web atiende `/health` y `/metrics`.
 
 | Topic                | Mensaje             | Key             | Productor            | Consumidores (group)      |
 | -------------------- | ------------------- | --------------- | -------------------- | ------------------------- |
-| `user.registered`    | `UserRegistered`    | `user_id`       | users                | ranking                   |
+| `user.registered`    | `UserRegistered`    | `user_id`       | users (outbox)       | ranking                   |
 | `submission.created` | `SubmissionCreated` | `submission_id` | submissions (outbox) | judge                     |
 | `submission.judged`  | `SubmissionJudged`  | `submission_id` | judge                | submissions, ranking, bff |
 
-Cada topic tiene 3 particiones y su DLQ `<topic>.dlq`. Los consumidores son idempotentes por
+Cada topic tiene 3 particiones y su DLQ `<topic>.dlq`. `user.registered` es **compactado**
+(`cleanup.policy=compact`): como la key es el `user_id`, el log conserva el último evento de
+cada usuario indefinidamente y ranking puede reconstruir los usernames leyendo desde el
+principio. Los demás topics y todas las DLQ usan la política por defecto (`delete`).
+`infra/kafka/create-topics.sh` crea los topics y aplica su configuración con
+`kafka-configs --alter` también si ya existían (volúmenes anteriores). Los consumidores son idempotentes por
 `event_id`. `encodeEvent(topic, evento)` devuelve `{ key, value, headers, event }` listo para
 kafkajs y `decodeEvent(topic, value)` acepta el topic base o su DLQ.
 
@@ -169,10 +193,10 @@ sequenceDiagram
   par Consumidores independientes
     K->>S: submission.judged → actualiza veredicto (dedupe event_id)
   and
-    K->>R: submission.judged → scoreboard + stats en Redis (dedupe event_id)
+    K->>R: submission.judged → Postgres (dedupe event_id) + proyección del scoreboard en Redis
   and
     K->>B: submission.judged (group propio del bff)
-    B-->>W: submissionUpdated (veredicto)
+    B-->>W: submissionUpdated (veredicto) y scoreboardUpdated (si es de un contest)
   end
 ```
 
@@ -189,8 +213,10 @@ sequenceDiagram
    prefirmadas, compila y ejecuta en el sandbox y publica `submission.judged` con un
    `event_id` derivado del `submission_id`, así un reproceso genera el mismo evento.
 6. Tres consumer groups independientes reaccionan: **submissions** guarda el veredicto,
-   **ranking** actualiza scoreboard y estadísticas, y **bff** empuja `submissionUpdated` al
-   cliente por WebSocket. Todos deduplican por `event_id`.
+   **ranking** guarda la submission en Postgres (estadísticas) y re-proyecta la fila del
+   usuario en el scoreboard de Redis, y **bff** empuja `submissionUpdated` al cliente por
+   WebSocket (y `scoreboardUpdated` si la submission es de un contest). Todos deduplican por
+   `event_id`.
 7. Si un consumidor falla de forma persistente, tras N reintentos envía el mensaje a
    `<topic>.dlq` para inspección (Kafka UI en `localhost:8080`).
 
@@ -202,7 +228,7 @@ sequenceDiagram
   actor U as Usuario
   participant W as web
   participant B as bff (cliente MCP)
-  participant G as Gemini (Vertex AI)
+  participant G as Gemini
   participant X as mcp (MCP server)
   participant R as ranking
 
@@ -223,10 +249,12 @@ sequenceDiagram
 ```
 
 1. El usuario pregunta en el chat; el frontend llama al BFF con su JWT.
-2. El BFF, como **cliente MCP** (transporte Streamable HTTP), obtiene la lista de tools del
-   MCP server enviando el JWT del usuario en `Authorization`.
-3. El BFF llama a Gemini (Vertex AI) con la conversación y las tools declaradas como
-   funciones.
+2. El BFF, como **cliente MCP** (transporte Streamable HTTP sin estado: cada request es
+   independiente, sin sesión), obtiene la lista de tools del MCP server enviando el JWT del
+   usuario en `Authorization`. El MCP valida el header `Host` (`MCP_ALLOWED_HOSTS`): en el
+   docker-compose debe incluir `mcp`.
+3. El BFF llama a Gemini (Google AI Studio con API key, o Vertex AI; modelo `GEMINI_MODEL`)
+   con la conversación y las tools declaradas como funciones.
 4. Si Gemini pide una tool, el BFF la ejecuta con `tools/call` en el MCP server.
 5. El MCP server verifica el JWT y llama al servicio correspondiente por gRPC (cliente
    Connect) **propagando el mismo token**: el asistente solo ve lo que el usuario puede ver
@@ -241,3 +269,25 @@ Kafka (KRaft, un nodo) + `kafka-init` (topics y DLQ), Kafka UI, PostgreSQL (una 
 una BD y un usuario por servicio, sin acceso cruzado), Redis, MinIO + `minio-init`
 (bucket privado `testcases`). En Kubernetes cada servicio tiene su propia instancia de BD
 ([ADR 0005](adr/0005-bd-por-servicio.md)).
+
+## Desviaciones por servicio
+
+Durante la fase 1 algunos servicios se apartaron de su ficha original. Cada README tiene el
+detalle en su sección "Desviaciones de la ficha"; este es el resumen.
+
+| Servicio                                                                  | Desviaciones                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [submissions](../services/submissions/README.md#desviaciones-de-la-ficha) | Consumidor de `submission.judged` con **kafkajs directo** en vez de `Transport.KAFKA` de Nest, para tener commit manual después de persistir, DLQ con el mensaje original y readiness con los eventos del consumidor. gRPC sigue con `Transport.GRPC`.                                                                                                                                   |
+| [ranking](../services/ranking/README.md#desviaciones-de-la-ficha)         | **Postgres como fuente de verdad y Redis solo como proyección del scoreboard** (estadísticas, usernames y dedupe en Postgres, en una transacción por evento). `/ready` responde 200 `degraded` si cae Redis. DLQ solo para errores que no se arreglan reintentando. Máximo 26 problemas por contest. `attempts` no cuenta CE ni IE. `GetUserStats` sin `user_id` = el usuario del token. |
+| [mcp](../services/mcp/README.md#desviaciones-de-la-ficha)                 | **SDK v2** (`@modelcontextprotocol/server` + `node`) en vez de `@modelcontextprotocol/sdk` (v1), en modo sin estado. `/ready` agregado. Variables opcionales `MCP_*` (en `.env.example`). `ver_submission` consulta además `GetProblem`. Argumentos extra `page_size` y `page_token`.                                                                                                    |
+
+Cambios de la fase 1 que no están en una sección de desviaciones de su README:
+
+- **users** publica `user.registered` con **outbox** (como submissions; el [ADR 0004](adr/0004-outbox-consumidores-idempotentes.md)
+  lo recomendaba) y agrega las variables opcionales `USERS_OUTBOX_*` y `USERS_ADMIN_*` (admin
+  inicial). Ver [services/users](../services/users/README.md).
+- **problems** genera el slug desde el título si no viene y agrega `S3_JUDGE_PRESIGN_TTL_SECONDS`.
+  Ver [services/problems](../services/problems/README.md).
+- **judge** procesa un mensaje a la vez por instancia e ignora `JUDGE_CONCURRENCY`; el
+  aislamiento de red del sandbox depende de `unshare` (limitaciones en Docker). Ver
+  [services/judge](../services/judge/README.md) y su [ADR del sandbox](../services/judge/docs/adr-sandbox.md).
