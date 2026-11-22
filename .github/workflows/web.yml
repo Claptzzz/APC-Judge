@@ -9,6 +9,8 @@ on:
       - 'pnpm-lock.yaml'
       - '.github/workflows/_service-ci.yml'
       - '.github/workflows/web.yml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
   push:
     branches: [main]
     paths:
@@ -18,6 +20,9 @@ on:
       - 'pnpm-lock.yaml'
       - '.github/workflows/_service-ci.yml'
       - '.github/workflows/web.yml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+  workflow_dispatch:
 
 concurrency:
   group: web-${{ github.ref }}

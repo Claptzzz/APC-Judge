@@ -9,6 +9,9 @@ on:
       - 'proto/**'
       - '.github/workflows/_service-ci.yml'
       - '.github/workflows/ranking.yml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
   push:
     branches: [main]
     paths:
@@ -18,6 +21,10 @@ on:
       - 'proto/**'
       - '.github/workflows/_service-ci.yml'
       - '.github/workflows/ranking.yml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+  workflow_dispatch:
 
 concurrency:
   group: ranking-${{ github.ref }}

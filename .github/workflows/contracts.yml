@@ -7,6 +7,9 @@ on:
       - 'packages/contracts/**'
       - 'buf.yaml'
       - '.github/workflows/contracts.yml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
   push:
     branches: [main]
     paths:
@@ -14,6 +17,10 @@ on:
       - 'packages/contracts/**'
       - 'buf.yaml'
       - '.github/workflows/contracts.yml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+  workflow_dispatch:
 
 permissions:
   contents: read
