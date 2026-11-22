@@ -132,11 +132,14 @@ Se validan con zod al arrancar. `PROBLEMS_GRPC_ADDR` acepta `host:port` o una UR
 - **Red en Docker:** el perfil seccomp por defecto de Docker bloquea `unshare` con
   `CLONE_NEWUSER`, así que en un contenedor normal el judge arranca con el warning
   _"unshare -rn no está disponible"_ y **los programas tienen acceso a la red**. En particular
-  podrían llamar a `GetJudgeSpec` (que no exige JWT) y leer las salidas esperadas. Para aislar
-  la red: correr el contenedor con un perfil seccomp que permita `unshare`/`clone` con
-  namespaces de usuario (verificado con `--security-opt seccomp=unconfined`) o, en Kubernetes,
-  aplicar una `NetworkPolicy` de egress para el pod del judge que solo permita Kafka, problems y
-  MinIO. Lo mismo ocurre en hosts con AppArmor que restringe los user namespaces sin
+  podrían llamar a `GetJudgeSpec` (que no exige JWT) y leer las salidas esperadas. El
+  docker-compose del repo corre el judge con un perfil seccomp propio
+  ([`infra/judge/seccomp.json`](../../infra/judge/README.md)): el de Docker más **solo**
+  `unshare(CLONE_NEWUSER | CLONE_NEWNET)`, así que ahí `unshare -rn` funciona sin
+  `seccomp=unconfined` ni capabilities extra. Con `docker run` a mano hay que pasar
+  `--security-opt seccomp=infra/judge/seccomp.json`. En Kubernetes, la alternativa es una
+  `NetworkPolicy` de egress para el pod del judge que solo permita Kafka, problems y MinIO.
+  Ningún perfil alcanza en hosts con AppArmor que restringe los user namespaces sin
   privilegios (p. ej. Ubuntu ≥ 23.10; puede afectar a los runners de GitHub).
 - **Mismo usuario que el judge:** el programa corre con el uid del worker (no-root en la
   imagen). Puede leer archivos legibles por ese usuario, incluidos los casos descargados de su

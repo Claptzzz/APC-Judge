@@ -270,6 +270,22 @@ una BD y un usuario por servicio, sin acceso cruzado), Redis, MinIO + `minio-ini
 (bucket privado `testcases`). En Kubernetes cada servicio tiene su propia instancia de BD
 ([ADR 0005](adr/0005-bd-por-servicio.md)).
 
+El mismo `docker-compose.yml` define los servicios del backend (users, problems, submissions,
+ranking, judge con 2 réplicas y mcp) con el profile `apps`, así `pnpm infra:up` sigue
+levantando solo la infraestructura:
+
+- `pnpm stack:up` construye las imágenes `juez-<servicio>` y levanta infra + servicios, y
+  espera a que todos queden healthy (el healthcheck de cada servicio usa `/ready`).
+- Cada servicio con BD aplica sus migraciones al arrancar, en el mismo contenedor
+  (`node <migrate> && exec node dist/main.js`), sin contenedores que terminan.
+- Dentro de la red se usan los nombres de servicio (`users:50051`, `postgres:5432`,
+  `kafka:29092`, `minio:9000`); en el host se publican los puertos de la tabla de arriba
+  (salvo el judge, que tiene 2 réplicas). Las llaves JWT se montan desde `.secrets/`.
+- El judge corre con un perfil seccomp propio que permite solo `unshare -rn`, para aislar la
+  red del sandbox ([infra/judge](../infra/judge/README.md)).
+- `pnpm stack:seed` siembra los problemas de ejemplo y `pnpm stack:smoke` recorre el flujo
+  completo por gRPC (registro, login, submissions, veredictos, contest y scoreboard).
+
 ## Desviaciones por servicio
 
 Durante la fase 1 algunos servicios se apartaron de su ficha original. Cada README tiene el

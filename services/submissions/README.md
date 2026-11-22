@@ -42,16 +42,16 @@ hacia el cliente de `CreateSubmission`:
 
 ## Variables de entorno
 
-| Variable                                                                | Ejemplo                                                                     |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `SUBMISSIONS_HTTP_PORT` · `SUBMISSIONS_GRPC_PORT`                       | `8083` · `50053`                                                            |
-| `SUBMISSIONS_DATABASE_URL`                                              | `postgres://submissions_svc:submissions_svc_dev@localhost:5432/submissions` |
-| `KAFKA_BROKERS`                                                         | `localhost:9092`                                                            |
-| `SUBMISSIONS_KAFKA_CLIENT_ID` · `SUBMISSIONS_KAFKA_GROUP_ID`            | `submissions`                                                               |
-| `SUBMISSIONS_OUTBOX_POLL_INTERVAL_MS` · `SUBMISSIONS_OUTBOX_BATCH_SIZE` | `500` · `100`                                                               |
-| `USERS_GRPC_ADDR` · `PROBLEMS_GRPC_ADDR` · `RANKING_GRPC_ADDR`          | `localhost:50051` · `:50052` · `:50054`                                     |
-| `JWT_ISSUER` · `JWT_AUDIENCE`                                           | `juez-users` · `juez`                                                       |
-| `LOG_LEVEL`                                                             | `info`                                                                      |
+| Variable                                                                | Ejemplo                                                                      |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `SUBMISSIONS_HTTP_PORT` · `SUBMISSIONS_GRPC_PORT`                       | `8083` · `50053`                                                             |
+| `SUBMISSIONS_DATABASE_URL`                                              | `postgres://submissions_svc:submissions_svc_dev@localhost:55432/submissions` |
+| `KAFKA_BROKERS`                                                         | `localhost:9092`                                                             |
+| `SUBMISSIONS_KAFKA_CLIENT_ID` · `SUBMISSIONS_KAFKA_GROUP_ID`            | `submissions`                                                                |
+| `SUBMISSIONS_OUTBOX_POLL_INTERVAL_MS` · `SUBMISSIONS_OUTBOX_BATCH_SIZE` | `500` · `100`                                                                |
+| `USERS_GRPC_ADDR` · `PROBLEMS_GRPC_ADDR` · `RANKING_GRPC_ADDR`          | `localhost:50051` · `:50052` · `:50054`                                      |
+| `JWT_ISSUER` · `JWT_AUDIENCE`                                           | `juez-users` · `juez`                                                        |
+| `LOG_LEVEL`                                                             | `info`                                                                       |
 
 ## Salud y resiliencia
 

@@ -120,15 +120,15 @@ página desde Postgres.
 
 ## Variables de entorno
 
-| Variable                                                               | Ejemplo                                                         |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `RANKING_HTTP_PORT` · `RANKING_GRPC_PORT`                              | `8084` · `50054`                                                |
-| `RANKING_DATABASE_URL`                                                 | `postgres://ranking_svc:ranking_svc_dev@localhost:5432/ranking` |
-| `RANKING_REDIS_URL`                                                    | `redis://localhost:6379/0`                                      |
-| `KAFKA_BROKERS` · `RANKING_KAFKA_CLIENT_ID` · `RANKING_KAFKA_GROUP_ID` | `localhost:9092` · `ranking` · `ranking`                        |
-| `USERS_GRPC_ADDR` · `PROBLEMS_GRPC_ADDR`                               | `localhost:50051` · `localhost:50052`                           |
-| `JWT_ISSUER` · `JWT_AUDIENCE`                                          | `juez-users` · `juez`                                           |
-| `LOG_LEVEL`                                                            | `info`                                                          |
+| Variable                                                               | Ejemplo                                                          |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `RANKING_HTTP_PORT` · `RANKING_GRPC_PORT`                              | `8084` · `50054`                                                 |
+| `RANKING_DATABASE_URL`                                                 | `postgres://ranking_svc:ranking_svc_dev@localhost:55432/ranking` |
+| `RANKING_REDIS_URL`                                                    | `redis://localhost:6379/0`                                       |
+| `KAFKA_BROKERS` · `RANKING_KAFKA_CLIENT_ID` · `RANKING_KAFKA_GROUP_ID` | `localhost:9092` · `ranking` · `ranking`                         |
+| `USERS_GRPC_ADDR` · `PROBLEMS_GRPC_ADDR`                               | `localhost:50051` · `localhost:50052`                            |
+| `JWT_ISSUER` · `JWT_AUDIENCE`                                          | `juez-users` · `juez`                                            |
+| `LOG_LEVEL`                                                            | `info`                                                           |
 
 Se validan con zod al arrancar (`src/config.ts`); si falta alguna obligatoria el proceso termina
 con un log `fatal` que lista todas las inválidas.
@@ -141,7 +141,9 @@ con un log `fatal` que lista todas las inválidas.
 | `pnpm --filter @juez/ranking scoreboard:rebuild` | Regenera toda la proyección de Redis desde Postgres. Acepta `contest_id`s para reconstruir solo esos. |
 | `pnpm --filter @juez/ranking start:dev`          | Arranca con `../../.env.example` y `../../.env`.                                                      |
 
-En Docker: `node dist/migrate.js` y `node dist/scripts/rebuild.js`.
+En Docker: `node dist/migrate.js` y `node dist/scripts/rebuild.js`. En el docker-compose
+(`pnpm stack:up`) las migraciones se aplican al arrancar el contenedor; el rebuild se corre con
+`docker compose -p juez exec ranking node dist/scripts/rebuild.js`.
 
 ## Salud y resiliencia
 

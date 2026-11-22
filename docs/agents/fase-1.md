@@ -6,6 +6,7 @@ La ficha y los contratos son la fuente de verdad. Si te desvías de la ficha, do
 una sección "Desviaciones de la ficha" del README del servicio.
 
 ## Alcance
+
 - Solo puedes modificar `services/<tu-servicio>/**` y crear `.github/workflows/<tu-servicio>.yml`.
 - NO modifiques `proto/`, `packages/`, `infra/`, `pnpm-workspace.yaml`, otros servicios ni apps.
   Si necesitas un cambio fuera de tu alcance, no lo hagas: descríbelo en la sección
@@ -17,6 +18,7 @@ una sección "Desviaciones de la ficha" del README del servicio.
   submissions) para mantener patrones consistentes, pero no los modifiques.
 
 ## Implementación
+
 - TypeScript estricto con `@juez/config` (tsconfig, ESLint y preset de Vitest).
 - Configuración solo por variables de entorno, validadas con zod al arrancar. Usa los nombres
   definidos en `.env.example` y en tu ficha.
@@ -28,6 +30,7 @@ una sección "Desviaciones de la ficha" del README del servicio.
   con un script `db:migrate`. Nunca modifiques una migración existente; crea una nueva.
 
 ## Resiliencia (obligatorio)
+
 - Las dependencias (Kafka, otros servicios gRPC, BD) pueden no estar disponibles al arrancar.
   El servicio debe arrancar igual y reintentar en segundo plano con backoff exponencial
   (tope 30 s). Nunca captures un error de conexión solo con un warning sin reintentar.
@@ -46,6 +49,7 @@ una sección "Desviaciones de la ficha" del README del servicio.
   `timestamp(3) with time zone`, porque JS solo tiene precisión de milisegundos.
 
 ## Tests y CI
+
 - Vitest con cobertura ≥ 60% usando solo tests unitarios, porque el CI no levanta
   infraestructura. Mockea los clientes gRPC, Kafka, la BD y S3 donde corresponda.
 - Opcional: `test:int` contra la infraestructura local (`pnpm infra:up`), excluido del CI.
@@ -56,14 +60,17 @@ una sección "Desviaciones de la ficha" del README del servicio.
   `.github/workflows/_service-ci.yml` y el propio workflow.
 
 ## macOS
+
 - El judge depende de herramientas de Linux (`prlimit`, `unshare`); en macOS solo funciona
   dentro de Docker. Si tu servicio depende de algo exclusivo de Linux, haz que sus tests se
   salten con un mensaje claro en otras plataformas, y deja que el CI (Ubuntu) los ejecute.
 
 ## Git
+
 - No ejecutes `git commit`, `push` ni `merge`, ni crees ramas. Nunca agregues `Co-Authored-By`.
 
 ## Criterios de aceptación (ejecútalos y reporta cada uno)
+
 - `pnpm --filter <paquete> lint`, `typecheck`, `test` (con el % de cobertura) y `build` OK.
 - `docker build` de tu imagen OK.
 - El servicio arranca contra la infraestructura local y `/ready` responde OK.
@@ -72,5 +79,6 @@ una sección "Desviaciones de la ficha" del README del servicio.
 - `actionlint` sobre tu workflow.
 
 ## Reporte final
+
 Qué implementaste, decisiones propias (librerías y versiones), desviaciones de la ficha,
 cambios propuestos fuera de alcance, lo que no pudiste verificar y un mensaje de commit sugerido.

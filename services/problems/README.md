@@ -67,13 +67,16 @@ O(N·Q) da TLE con el límite de 1 s. Los problemas sembrados tienen como autor 
 
 Imagen: `docker build -f services/problems/Dockerfile -t juez-problems .` desde la raíz. La misma
 imagen corre las migraciones y el seed: `node dist/scripts/migrate.js` / `node dist/scripts/seed.js`.
+En el docker-compose (`pnpm stack:up`) las migraciones se aplican al arrancar el contenedor y el
+seed se corre con `pnpm stack:seed`; ahí `S3_ENDPOINT` es `http://minio:9000` y
+`S3_PUBLIC_ENDPOINT` es `http://localhost:9000`.
 
 ## Variables de entorno
 
 | Variable                                          | Ejemplo                                                                                   |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `PROBLEMS_HTTP_PORT` · `PROBLEMS_GRPC_PORT`       | `8082` · `50052`                                                                          |
-| `PROBLEMS_DATABASE_URL`                           | `postgres://problems_svc:problems_svc_dev@localhost:5432/problems`                        |
+| `PROBLEMS_DATABASE_URL`                           | `postgres://problems_svc:problems_svc_dev@localhost:55432/problems`                       |
 | `S3_ENDPOINT`                                     | `http://localhost:9000` (en docker `http://minio:9000`): operaciones y URLs GET del judge |
 | `S3_PUBLIC_ENDPOINT`                              | `http://localhost:9000`: host con el que se firman las URLs PUT que usa el navegador      |
 | `S3_REGION` · `S3_FORCE_PATH_STYLE`               | `us-east-1` · `true`                                                                      |

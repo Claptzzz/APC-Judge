@@ -19,8 +19,13 @@
     "proto:breaking": "buf breaking --against '.git#branch=main'",
     "proto:gen": "turbo run generate --filter=@juez/contracts",
     "infra:up": "sh infra/scripts/compose.sh up -d --wait --wait-timeout 180",
-    "infra:down": "sh infra/scripts/compose.sh down",
-    "infra:reset": "sh infra/scripts/compose.sh down -v --remove-orphans && sh infra/scripts/compose.sh up -d --wait --wait-timeout 180",
+    "infra:down": "sh infra/scripts/compose.sh --profile apps down",
+    "infra:reset": "sh infra/scripts/compose.sh --profile apps down -v --remove-orphans && sh infra/scripts/compose.sh up -d --wait --wait-timeout 180",
+    "stack:up": "sh infra/scripts/gen-jwt-keys.sh && sh infra/scripts/compose.sh --profile apps up -d --build --wait --wait-timeout 300",
+    "stack:down": "sh infra/scripts/compose.sh --profile apps down",
+    "stack:logs": "sh infra/scripts/compose.sh --profile apps logs -f --tail 200",
+    "stack:seed": "sh infra/scripts/compose.sh --profile apps exec -T problems node dist/scripts/seed.js",
+    "stack:smoke": "sh infra/scripts/smoke-backend.sh",
     "jwt:keys": "sh infra/scripts/gen-jwt-keys.sh"
   },
   "devDependencies": {

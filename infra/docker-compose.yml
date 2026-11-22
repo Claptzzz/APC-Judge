@@ -1,8 +1,38 @@
-# Infraestructura local de juez-online. Usar vía `pnpm infra:up | infra:down | infra:reset`
-# (infra/scripts/compose.sh pasa --env-file .env o .env.example).
+# Stack local de juez-online (infra/scripts/compose.sh pasa --env-file .env o .env.example).
+#   - Infraestructura (sin profile): `pnpm infra:up | infra:down | infra:reset`.
+#   - Servicios del backend (profile `apps`): `pnpm stack:up | stack:down | stack:logs`.
 # Los contenedores *-init crean topics/bucket (idempotente), dejan /tmp/ready y quedan en
 # espera; su healthcheck revisa esa marca, así `up --wait` espera a que terminen.
 name: juez
+
+# ---------------------------------------------------------------------------------------------
+# Comunes a los servicios del backend (profile `apps`).
+# - Imagen `juez-<servicio>`, construida con contexto en la raíz y el Dockerfile del servicio.
+# - Cada servicio con BD aplica sus migraciones antes de arrancar, en el mismo contenedor
+#   (`node <migrate> && exec node dist/main.js`): no hay contenedores que terminan, así que
+#   `up --wait` sirve igual. Si la migración falla (p. ej. Postgres caído), el contenedor sale
+#   con error y `restart: unless-stopped` lo vuelve a intentar.
+# - El healthcheck usa /ready (no /health, como el HEALTHCHECK de las imágenes), así
+#   `up --wait` espera a que cada servicio tenga sus dependencias listas.
+# - Las direcciones son las de la red de docker; los puertos publicados en el host son los de
+#   docs/architecture.md (configurables con las mismas variables *_PORT de .env).
+# ---------------------------------------------------------------------------------------------
+x-app: &app
+  profiles: [apps]
+  restart: unless-stopped
+  init: true
+
+x-app-healthcheck: &app-healthcheck
+  interval: 5s
+  timeout: 3s
+  retries: 30
+  start_period: 20s
+
+x-jwt-verify-env: &jwt-verify-env
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  USERS_GRPC_ADDR: users:50051
+  JWT_ISSUER: ${JWT_ISSUER:-juez-users}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-juez}
 
 services:
   postgres:
@@ -163,6 +193,230 @@ services:
       timeout: 3s
       retries: 40
       start_period: 5s
+
+  # -------------------------------------------------------------------------------------------
+  # Servicios del backend (profile `apps`)
+  # -------------------------------------------------------------------------------------------
+  users:
+    <<: *app
+    image: juez-users
+    build:
+      context: ..
+      dockerfile: services/users/Dockerfile
+    command: ['sh', '-c', 'node dist/migrate.js && exec node dist/main.js']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_healthy
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      USERS_DATABASE_URL: postgres://${USERS_DB_USER:-users_svc}:${USERS_DB_PASSWORD:-users_svc_dev}@postgres:5432/${USERS_DB_NAME:-users}
+      KAFKA_BROKERS: kafka:29092
+      USERS_KAFKA_CLIENT_ID: ${USERS_KAFKA_CLIENT_ID:-users}
+      USERS_OUTBOX_POLL_INTERVAL_MS: ${USERS_OUTBOX_POLL_INTERVAL_MS:-500}
+      USERS_OUTBOX_BATCH_SIZE: ${USERS_OUTBOX_BATCH_SIZE:-100}
+      # Llaves de .secrets/ (`pnpm jwt:keys`), montadas en solo lectura.
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt-public.pem
+      JWT_KEY_ID: ${JWT_KEY_ID:-dev-1}
+      JWT_ISSUER: ${JWT_ISSUER:-juez-users}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-juez}
+      JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-3600}
+      # Admin inicial (lo usa stack:smoke para crear contests). Idempotente.
+      USERS_ADMIN_USERNAME: ${USERS_ADMIN_USERNAME:-admin}
+      USERS_ADMIN_EMAIL: ${USERS_ADMIN_EMAIL:-admin@juez.dev}
+      USERS_ADMIN_PASSWORD: ${USERS_ADMIN_PASSWORD:-admin_dev_password}
+    volumes:
+      - ../.secrets/jwt-private.pem:/run/secrets/jwt-private.pem:ro
+      - ../.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+    ports:
+      - '${USERS_HTTP_PORT:-8081}:8081'
+      - '${USERS_GRPC_PORT:-50051}:50051'
+    healthcheck:
+      <<: *app-healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8081/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+
+  problems:
+    <<: *app
+    image: juez-problems
+    build:
+      context: ..
+      dockerfile: services/problems/Dockerfile
+    command: ['sh', '-c', 'node dist/scripts/migrate.js && exec node dist/main.js']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_healthy
+    environment:
+      <<: *jwt-verify-env
+      PROBLEMS_DATABASE_URL: postgres://${PROBLEMS_DB_USER:-problems_svc}:${PROBLEMS_DB_PASSWORD:-problems_svc_dev}@postgres:5432/${PROBLEMS_DB_NAME:-problems}
+      # Endpoint interno: operaciones de problems y URLs GET que usa el judge dentro de la red.
+      S3_ENDPOINT: http://minio:9000
+      # Endpoint público: URLs PUT que usa el navegador del setter.
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin_dev}
+      S3_BUCKET_TESTCASES: ${S3_BUCKET_TESTCASES:-testcases}
+      S3_PRESIGN_TTL_SECONDS: ${S3_PRESIGN_TTL_SECONDS:-900}
+    ports:
+      - '${PROBLEMS_HTTP_PORT:-8082}:8082'
+      - '${PROBLEMS_GRPC_PORT:-50052}:50052'
+    healthcheck:
+      <<: *app-healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8082/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+
+  submissions:
+    <<: *app
+    image: juez-submissions
+    build:
+      context: ..
+      dockerfile: services/submissions/Dockerfile
+    command: ['sh', '-c', 'node dist/migrate.js && exec node dist/main.js']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_healthy
+    environment:
+      <<: *jwt-verify-env
+      SUBMISSIONS_DATABASE_URL: postgres://${SUBMISSIONS_DB_USER:-submissions_svc}:${SUBMISSIONS_DB_PASSWORD:-submissions_svc_dev}@postgres:5432/${SUBMISSIONS_DB_NAME:-submissions}
+      KAFKA_BROKERS: kafka:29092
+      SUBMISSIONS_KAFKA_CLIENT_ID: ${SUBMISSIONS_KAFKA_CLIENT_ID:-submissions}
+      SUBMISSIONS_KAFKA_GROUP_ID: ${SUBMISSIONS_KAFKA_GROUP_ID:-submissions}
+      SUBMISSIONS_OUTBOX_POLL_INTERVAL_MS: ${SUBMISSIONS_OUTBOX_POLL_INTERVAL_MS:-500}
+      SUBMISSIONS_OUTBOX_BATCH_SIZE: ${SUBMISSIONS_OUTBOX_BATCH_SIZE:-100}
+      PROBLEMS_GRPC_ADDR: problems:50052
+      RANKING_GRPC_ADDR: ranking:50054
+    ports:
+      - '${SUBMISSIONS_HTTP_PORT:-8083}:8083'
+      - '${SUBMISSIONS_GRPC_PORT:-50053}:50053'
+    healthcheck:
+      <<: *app-healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8083/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+
+  ranking:
+    <<: *app
+    image: juez-ranking
+    build:
+      context: ..
+      dockerfile: services/ranking/Dockerfile
+    command: ['sh', '-c', 'node dist/migrate.js && exec node dist/main.js']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_healthy
+    environment:
+      <<: *jwt-verify-env
+      RANKING_DATABASE_URL: postgres://${RANKING_DB_USER:-ranking_svc}:${RANKING_DB_PASSWORD:-ranking_svc_dev}@postgres:5432/${RANKING_DB_NAME:-ranking}
+      RANKING_REDIS_URL: redis://redis:6379/0
+      KAFKA_BROKERS: kafka:29092
+      RANKING_KAFKA_CLIENT_ID: ${RANKING_KAFKA_CLIENT_ID:-ranking}
+      RANKING_KAFKA_GROUP_ID: ${RANKING_KAFKA_GROUP_ID:-ranking}
+      PROBLEMS_GRPC_ADDR: problems:50052
+    ports:
+      - '${RANKING_HTTP_PORT:-8084}:8084'
+      - '${RANKING_GRPC_PORT:-50054}:50054'
+    healthcheck:
+      <<: *app-healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8084/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+
+  judge:
+    <<: *app
+    image: juez-judge
+    build:
+      context: ..
+      dockerfile: services/judge/Dockerfile
+    # Escala por réplicas (un mensaje a la vez por instancia; hasta 3 = particiones del topic).
+    # Sin puertos publicados: con 2 réplicas chocarían. /health, /ready y /metrics se consultan
+    # con `docker compose exec`.
+    deploy:
+      replicas: 2
+    # Perfil seccomp = el de Docker + solo `unshare(CLONE_NEWUSER|CLONE_NEWNET)`, para que el
+    # sandbox pueda ejecutar sin red (`unshare -rn`). Ver infra/judge/README.md.
+    security_opt:
+      - seccomp=./judge/seccomp.json
+    depends_on:
+      kafka-init:
+        condition: service_healthy
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      KAFKA_BROKERS: kafka:29092
+      JUDGE_KAFKA_CLIENT_ID: ${JUDGE_KAFKA_CLIENT_ID:-judge}
+      JUDGE_KAFKA_GROUP_ID: ${JUDGE_KAFKA_GROUP_ID:-judge}
+      PROBLEMS_GRPC_ADDR: problems:50052
+      # El judge procesa un mensaje a la vez por instancia; se fija en 1 para evitar el warning.
+      JUDGE_CONCURRENCY: 1
+      JUDGE_WORKDIR: /tmp/juez-judge
+      JUDGE_COMPILE_TIMEOUT_MS: ${JUDGE_COMPILE_TIMEOUT_MS:-10000}
+      JUDGE_MAX_OUTPUT_KB: ${JUDGE_MAX_OUTPUT_KB:-65536}
+    healthcheck:
+      <<: *app-healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8085/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+
+  mcp:
+    <<: *app
+    image: juez-mcp
+    build:
+      context: ..
+      dockerfile: services/mcp/Dockerfile
+    environment:
+      <<: *jwt-verify-env
+      PROBLEMS_GRPC_ADDR: problems:50052
+      SUBMISSIONS_GRPC_ADDR: submissions:50053
+      RANKING_GRPC_ADDR: ranking:50054
+      # `mcp` es el host con el que lo llama el BFF dentro de la red de docker.
+      MCP_ALLOWED_HOSTS: localhost,127.0.0.1,[::1],mcp
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+      MCP_MAX_BODY_BYTES: ${MCP_MAX_BODY_BYTES:-262144}
+      MCP_UPSTREAM_TIMEOUT_MS: ${MCP_UPSTREAM_TIMEOUT_MS:-3000}
+    ports:
+      - '${MCP_PORT:-4100}:4100'
+    healthcheck:
+      <<: *app-healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4100/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
 
 volumes:
   postgres-data:

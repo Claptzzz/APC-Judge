@@ -74,7 +74,7 @@ lista todas.
 | Variable                                                              | Ejemplo / por defecto                                                                                                    |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `USERS_HTTP_PORT` · `USERS_GRPC_PORT`                                 | `8081` · `50051`                                                                                                         |
-| `USERS_DATABASE_URL`                                                  | `postgres://users_svc:users_svc_dev@localhost:5432/users` (obligatoria)                                                  |
+| `USERS_DATABASE_URL`                                                  | `postgres://users_svc:users_svc_dev@localhost:55432/users` (obligatoria)                                                 |
 | `KAFKA_BROKERS` · `USERS_KAFKA_CLIENT_ID`                             | `localhost:9092` (obligatoria, separadas por coma) · `users`                                                             |
 | `USERS_OUTBOX_POLL_INTERVAL_MS` · `USERS_OUTBOX_BATCH_SIZE`           | `500` · `100` (**nuevas**, opcionales)                                                                                   |
 | `JWT_PRIVATE_KEY_PATH` · `JWT_PUBLIC_KEY_PATH`                        | `.secrets/jwt-private.pem` (obligatoria) · `.secrets/jwt-public.pem` (opcional: si está, debe corresponder a la privada) |
@@ -121,4 +121,6 @@ aplicado con el migrador de `drizzle-orm`. Se escriben a mano y deben mantenerse
 
 **Docker:** `docker build -f services/users/Dockerfile -t juez-users .` (contexto en la raíz). Las
 llaves se montan como archivos (`JWT_PRIVATE_KEY_PATH=/run/secrets/jwt-private.pem`). Las
-migraciones se aplican con `docker run --rm <imagen> node dist/migrate.js`.
+migraciones se aplican con `docker run --rm <imagen> node dist/migrate.js`. En el docker-compose
+(`pnpm stack:up`) se aplican al arrancar el contenedor, las llaves de `.secrets/` se montan en
+solo lectura y el admin inicial toma `USERS_ADMIN_*` de `.env` (o los valores de desarrollo).

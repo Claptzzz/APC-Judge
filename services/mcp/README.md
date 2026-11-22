@@ -50,15 +50,15 @@ Ni publica ni consume.
 | `JWT_ISSUER` · `JWT_AUDIENCE`                                                            | `juez-users` · `juez`                                   |
 | `LOG_LEVEL`                                                                              | `info`                                                  |
 
-Opcionales (no están en `.env.example`; todas tienen valor por defecto):
+Opcionales (en la sección MCP de `.env.example`; todas tienen valor por defecto):
 
-| Variable                  | Por defecto                 | Para qué                                                                                                                                               |
-| ------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `MCP_HOST`                | `0.0.0.0`                   | Dirección de escucha.                                                                                                                                  |
-| `MCP_ALLOWED_HOSTS`       | `localhost,127.0.0.1,[::1]` | Hostnames (sin puerto) aceptados en el header `Host` de `/mcp` (protección contra DNS rebinding del SDK). En docker/k8s agrega el nombre del servicio. |
-| `MCP_ALLOWED_ORIGINS`     | _(vacío)_                   | Hostnames aceptados en `Origin`. Vacío: se rechaza toda request con `Origin` (navegadores); el BFF llama desde el servidor, sin `Origin`.              |
-| `MCP_MAX_BODY_BYTES`      | `262144` (256 KiB)          | Límite del body de `/mcp` (413 por encima).                                                                                                            |
-| `MCP_UPSTREAM_TIMEOUT_MS` | `3000`                      | Timeout por llamada gRPC (incluida `GetPublicKey`).                                                                                                    |
+| Variable                  | Por defecto                 | Para qué                                                                                                                                                                                             |
+| ------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MCP_HOST`                | `0.0.0.0`                   | Dirección de escucha.                                                                                                                                                                                |
+| `MCP_ALLOWED_HOSTS`       | `localhost,127.0.0.1,[::1]` | Hostnames (sin puerto) aceptados en el header `Host` de `/mcp` (protección contra DNS rebinding del SDK). En docker/k8s agrega el nombre del servicio (el docker-compose del repo ya incluye `mcp`). |
+| `MCP_ALLOWED_ORIGINS`     | _(vacío)_                   | Hostnames aceptados en `Origin`. Vacío: se rechaza toda request con `Origin` (navegadores); el BFF llama desde el servidor, sin `Origin`.                                                            |
+| `MCP_MAX_BODY_BYTES`      | `262144` (256 KiB)          | Límite del body de `/mcp` (413 por encima).                                                                                                                                                          |
+| `MCP_UPSTREAM_TIMEOUT_MS` | `3000`                      | Timeout por llamada gRPC (incluida `GetPublicKey`).                                                                                                                                                  |
 
 ## Implementación
 

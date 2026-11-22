@@ -28,6 +28,3 @@ pnpm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
-
-# docs
-CLAUDE.md
